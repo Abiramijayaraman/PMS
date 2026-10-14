@@ -1,1 +1,2 @@
-hi
+9jUWIsTdoQXm2Qx5HUeD3ZfIVLgxXE4QmAZCAHRsPQk=
+lanapms.centralindia.redis.azure.net:10000
