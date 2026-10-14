@@ -1,4 +1,1 @@
-{
-  "code": "BadRequest",
-  "message": "Azure Cache for Redis is retiring, create Azure Managed Redis instance instead. Learn more: https://aka.ms/AzureCacheForRedisRetirement \r\nRequestID=01b08115-892f-47ac-b821-3c9f72dcd428"
-}
+9jUWIsTdoQXm2Qx5HUeD3ZfIVLgxXE4QmAZCAHRsPQk=
