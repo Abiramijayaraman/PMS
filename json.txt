@@ -1,29 +1,145 @@
-print("\n========== FINBERT ANALYSIS RESULTS ==========")
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\src\sentiment_analysis.py
 
-results = pq.read_table(NEWS_OUTPUT_PATH).to_pandas()
+Checking local FinBERT model...
+All FinBERT model files are available.
 
-columns_to_display = [
-    "article_id",
-    "headline",
-    "matched_tickers",
-    "sentiment",
-    "positive_score",
-    "negative_score",
-    "neutral_score",
-    "sentiment_score"
-]
+Using device: cpu
 
-print(results[columns_to_display].to_string(index=False))
+Loading FinBERT tokenizer...
+Tokenizer loaded successfully.
 
-print("\n========== TOTAL SENTIMENT COUNTS ==========")
-print(results["sentiment"].value_counts())
+Loading FinBERT model...
+Loading weights: 100%|███████████████████████████████████████████████████████████████████| 201/201 [00:00<00:00, 1216.78it/s]
+FinBERT model loaded successfully!
 
-print("\n========== TICKER-WISE SENTIMENT ==========")
+Model sentiment labels:
+{'positive': 0, 'negative': 1, 'neutral': 2}
 
-ticker_results = pq.read_table(TICKER_OUTPUT_PATH).to_pandas()
+Reading news with extracted tickers...
+Total articles: 8
 
-print(
-    ticker_results[
-        ["headline", "ticker", "sentiment", "sentiment_score"]
-    ].to_string(index=False)
-)
+Starting FinBERT sentiment analysis...
+Processed 8/8 articles
+
+FinBERT Sentiment Results
+=========================
+
+Article ID: NEWS-001
+Headline: Reliance Industries shares rise after strong quarterly results
+Matched tickers: ['RELIANCE']
+Sentiment: positive
+Positive score: 0.9551
+Negative score: 0.0224
+Neutral score: 0.0226
+Sentiment score: 0.9327
+
+Article ID: NEWS-002
+Headline: SBI shares decline amid banking sector pressure
+Matched tickers: ['SBIN']
+Sentiment: negative
+Positive score: 0.0066
+Negative score: 0.9703
+Neutral score: 0.0231
+Sentiment score: -0.9637
+
+Article ID: NEWS-003
+Headline: Infosys announces expansion in artificial intelligence services
+Matched tickers: ['INFY']
+Sentiment: positive
+Positive score: 0.8112
+Negative score: 0.0105
+Neutral score: 0.1783
+Sentiment score: 0.8008
+
+Article ID: NEWS-004
+Headline: HDFC Bank reports steady growth in quarterly deposits
+Matched tickers: ['HDFCBANK']
+Sentiment: positive
+Positive score: 0.9552
+Negative score: 0.0168
+Neutral score: 0.028
+Sentiment score: 0.9384
+
+Article ID: NEWS-005
+Headline: Reliance and TCS attract investor attention
+Matched tickers: ['RELIANCE', 'TCS']
+Sentiment: positive
+Positive score: 0.7891
+Negative score: 0.0138
+Neutral score: 0.1971
+Sentiment score: 0.7753
+
+Article ID: NEWS-006
+Headline: ICICI Bank announces new banking initiatives
+Matched tickers: ['ICICIBANK']
+Sentiment: positive
+Positive score: 0.7898
+Negative score: 0.013
+Neutral score: 0.1973
+Sentiment score: 0.7768
+
+Article ID: NEWS-007
+Headline: Bharti Airtel expands its 5G network
+Matched tickers: ['BHARTIARTL']
+Sentiment: positive
+Positive score: 0.6744
+Negative score: 0.0097
+Neutral score: 0.3159
+Sentiment score: 0.6647
+
+Article ID: NEWS-008
+Headline: Tata Steel faces demand pressure
+Matched tickers: ['TATASTEEL']
+Sentiment: negative
+Positive score: 0.0744
+Negative score: 0.8608
+Neutral score: 0.0648
+Sentiment score: -0.7863
+
+Saved successfully:
+C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\news_with_sentiment
+
+Creating sentiment-enriched news by ticker...
+
+Saved successfully:
+C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\news_by_ticker_with_sentiment
+
+========================================
+FINBERT SENTIMENT ANALYSIS COMPLETED
+========================================
+Articles processed: 8
+Article-ticker records: 9
+
+Output folders:
+1. C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\news_with_sentiment
+2. C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\news_by_ticker_with_sentiment
+
+========== FINBERT ANALYSIS RESULTS ==========
+article_id                                                        headline matched_tickers sentiment  positive_score  negative_score  neutral_score  sentiment_score
+  NEWS-001  Reliance Industries shares rise after strong quarterly results      [RELIANCE]  positive        0.955057        0.022375       0.022568         0.932681
+  NEWS-002                 SBI shares decline amid banking sector pressure          [SBIN]  negative        0.006636        0.970292       0.023072        -0.963657
+  NEWS-003 Infosys announces expansion in artificial intelligence services          [INFY]  positive        0.811243        0.010486       0.178271         0.800757
+  NEWS-004           HDFC Bank reports steady growth in quarterly deposits      [HDFCBANK]  positive        0.955206        0.016756       0.028038         0.938450
+  NEWS-005                     Reliance and TCS attract investor attention [RELIANCE, TCS]  positive        0.789093        0.013815       0.197092         0.775278
+  NEWS-006                    ICICI Bank announces new banking initiatives     [ICICIBANK]  positive        0.789765        0.012951       0.197284         0.776814
+  NEWS-007                            Bharti Airtel expands its 5G network    [BHARTIARTL]  positive        0.674391        0.009732       0.315877         0.664659
+  NEWS-008                                Tata Steel faces demand pressure     [TATASTEEL]  negative        0.074449        0.860763       0.064787        -0.786314
+
+========== TOTAL SENTIMENT COUNTS ==========
+sentiment
+positive    6
+negative    2
+Name: count, dtype: int64
+
+========== TICKER-WISE SENTIMENT ==========
+                                                       headline     ticker sentiment  sentiment_score
+ Reliance Industries shares rise after strong quarterly results   RELIANCE  positive         0.932681
+                SBI shares decline amid banking sector pressure       SBIN  negative        -0.963657
+Infosys announces expansion in artificial intelligence services       INFY  positive         0.800757
+          HDFC Bank reports steady growth in quarterly deposits   HDFCBANK  positive         0.938450
+                    Reliance and TCS attract investor attention   RELIANCE  positive         0.775278
+                    Reliance and TCS attract investor attention        TCS  positive         0.775278
+                   ICICI Bank announces new banking initiatives  ICICIBANK  positive         0.776814
+                           Bharti Airtel expands its 5G network BHARTIARTL  positive         0.664659
+                               Tata Steel faces demand pressure  TATASTEEL  negative        -0.786314
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> 
