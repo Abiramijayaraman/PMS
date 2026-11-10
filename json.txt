@@ -1,251 +1,86 @@
 (venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\src\read_bronze.py
 WARNING: Using incubator modules: jdk.incubator.vector
-26/11/10 15:42:29 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
+26/11/10 15:45:29 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
 Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
 Setting default log level to "WARN".
 To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
 C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\testing\utils.py:127: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
   require_minimum_pandas_version()
-26/11/10 15:42:32 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+26/11/10 15:45:31 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
 
 ========== READING BRONZE PARQUET ==========
+Total Bronze records: 8
 
-ERROR WHILE READING BRONZE DATA:
-An error occurred while calling o29.parquet.
-: java.lang.UnsatisfiedLinkError: 'boolean org.apache.hadoop.io.nativeio.NativeIO$Windows.access0(java.lang.String, int)'
-        at org.apache.hadoop.io.nativeio.NativeIO$Windows.access0(Native Method)
-        at org.apache.hadoop.io.nativeio.NativeIO$Windows.access(NativeIO.java:817)
-        at org.apache.hadoop.fs.FileUtil.canRead(FileUtil.java:1415)
-        at org.apache.hadoop.fs.FileUtil.list(FileUtil.java:1620)
-        at org.apache.hadoop.fs.RawLocalFileSystem.listStatus(RawLocalFileSystem.java:802)
-        at org.apache.hadoop.fs.FileSystem.listStatus(FileSystem.java:2079)
-        at org.apache.hadoop.fs.FileSystem.listStatus(FileSystem.java:2123)
-        at org.apache.hadoop.fs.ChecksumFileSystem.listStatus(ChecksumFileSystem.java:1020)
-        at org.apache.spark.util.HadoopFSUtils$.listLeafFiles(HadoopFSUtils.scala:247)
-        at org.apache.spark.util.HadoopFSUtils$.$anonfun$parallelListLeafFilesInternal$1(HadoopFSUtils.scala:159)
-        at scala.collection.immutable.List.map(List.scala:236)
-        at scala.collection.immutable.List.map(List.scala:79)
-        at org.apache.spark.util.HadoopFSUtils$.parallelListLeafFilesInternal(HadoopFSUtils.scala:148)
-        at org.apache.spark.util.HadoopFSUtils$.parallelListLeafFiles(HadoopFSUtils.scala:90)
-        at org.apache.spark.sql.execution.datasources.InMemoryFileIndex$.bulkListLeafFiles(InMemoryFileIndex.scala:190)
-        at org.apache.spark.sql.execution.datasources.InMemoryFileIndex.listLeafFiles(InMemoryFileIndex.scala:141)
-        at org.apache.spark.sql.execution.datasources.InMemoryFileIndex.refresh0(InMemoryFileIndex.scala:98)
-        at org.apache.spark.sql.execution.datasources.InMemoryFileIndex.<init>(InMemoryFileIndex.scala:70)
-        at org.apache.spark.sql.execution.datasources.DataSource.createInMemoryFileIndex(DataSource.scala:605)
-        at org.apache.spark.sql.execution.datasources.DataSource.resolveRelation(DataSource.scala:444)
-        at org.apache.spark.sql.catalyst.analysis.ResolveDataSource.org$apache$spark$sql$catalyst$analysis$ResolveDataSource$$loadV1BatchSource(ResolveDataSource.scala:209)
-        at org.apache.spark.sql.catalyst.analysis.ResolveDataSource$$anonfun$apply$1.$anonfun$applyOrElse$2(ResolveDataSource.scala:61)
-        at scala.Option.getOrElse(Option.scala:201)
-        at org.apache.spark.sql.catalyst.analysis.ResolveDataSource$$anonfun$apply$1.applyOrElse(ResolveDataSource.scala:61)
-        at org.apache.spark.sql.catalyst.analysis.ResolveDataSource$$anonfun$apply$1.applyOrElse(ResolveDataSource.scala:45)
-        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.$anonfun$resolveOperatorsUpWithPruning$3(AnalysisHelper.scala:139)
-        at org.apache.spark.sql.catalyst.trees.CurrentOrigin$.withOrigin(origin.scala:107)
-        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.$anonfun$resolveOperatorsUpWithPruning$1(AnalysisHelper.scala:139)
-        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper$.allowInvokingTransformsInAnalyzer(AnalysisHelper.scala:416)
-        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.resolveOperatorsUpWithPruning(AnalysisHelper.scala:135)
-        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.resolveOperatorsUpWithPruning$(AnalysisHelper.scala:131)
-        at org.apache.spark.sql.catalyst.plans.logical.LogicalPlan.resolveOperatorsUpWithPruning(LogicalPlan.scala:38)
-        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.resolveOperatorsUp(AnalysisHelper.scala:112)
-        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.resolveOperatorsUp$(AnalysisHelper.scala:111)
-        at org.apache.spark.sql.catalyst.plans.logical.LogicalPlan.resolveOperatorsUp(LogicalPlan.scala:38)
-        at org.apache.spark.sql.catalyst.analysis.ResolveDataSource.apply(ResolveDataSource.scala:45)
-        at org.apache.spark.sql.catalyst.analysis.ResolveDataSource.apply(ResolveDataSource.scala:43)
-        at org.apache.spark.sql.catalyst.rules.RuleExecutor.$anonfun$execute$2(RuleExecutor.scala:248)
-        at scala.collection.LinearSeqOps.foldLeft(LinearSeq.scala:183)
-        at scala.collection.LinearSeqOps.foldLeft$(LinearSeq.scala:179)
-        at scala.collection.immutable.List.foldLeft(List.scala:79)
-        at org.apache.spark.sql.catalyst.rules.RuleExecutor.$anonfun$execute$1(RuleExecutor.scala:245)
-        at org.apache.spark.sql.catalyst.rules.RuleExecutor.$anonfun$execute$1$adapted(RuleExecutor.scala:237)
-        at scala.collection.immutable.List.foreach(List.scala:323)
-        at org.apache.spark.sql.catalyst.rules.RuleExecutor.execute(RuleExecutor.scala:237)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.super$execute(Analyzer.scala:504)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.$anonfun$executeSameContext$1(Analyzer.scala:504)
-        at org.apache.spark.sql.internal.SQLConf$.withExistingConf(SQLConf.scala:211)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.runWithSessionConf(Analyzer.scala:466)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.org$apache$spark$sql$catalyst$analysis$Analyzer$$executeSameContext(Analyzer.scala:504)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.$anonfun$execute$1(Analyzer.scala:499)
-        at org.apache.spark.sql.catalyst.analysis.AnalysisContext$.withNewAnalysisContext(Analyzer.scala:286)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.execute(Analyzer.scala:499)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.execute(Analyzer.scala:372)
-        at org.apache.spark.sql.catalyst.rules.RuleExecutor.$anonfun$executeAndTrack$1(RuleExecutor.scala:207)
-        at org.apache.spark.sql.catalyst.QueryPlanningTracker$.withTracker(QueryPlanningTracker.scala:92)
-        at org.apache.spark.sql.catalyst.rules.RuleExecutor.executeAndTrack(RuleExecutor.scala:207)
-        at org.apache.spark.sql.catalyst.analysis.resolver.HybridAnalyzer.resolveInFixedPoint(HybridAnalyzer.scala:281)
-        at org.apache.spark.sql.catalyst.analysis.resolver.HybridAnalyzer.$anonfun$apply$1(HybridAnalyzer.scala:90)
-        at org.apache.spark.sql.catalyst.analysis.resolver.HybridAnalyzer.withTrackedAnalyzerBridgeState(HybridAnalyzer.scala:125)
-        at org.apache.spark.sql.catalyst.analysis.resolver.HybridAnalyzer.apply(HybridAnalyzer.scala:82)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.runAnalysis$1(Analyzer.scala:434)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.$anonfun$executeAndCheck$2(Analyzer.scala:439)
-        at org.apache.spark.sql.internal.SQLConf$.withExistingConf(SQLConf.scala:211)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.runWithSessionConf(Analyzer.scala:466)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.$anonfun$executeAndCheck$1(Analyzer.scala:439)
-        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper$.markInAnalyzer(AnalysisHelper.scala:423)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.executeAndCheck(Analyzer.scala:439)
-        at org.apache.spark.sql.execution.QueryExecution.$anonfun$lazyAnalyzed$2(QueryExecution.scala:216)
-        at org.apache.spark.sql.catalyst.QueryPlanningTracker.measurePhase(QueryPlanningTracker.scala:151)
-        at org.apache.spark.sql.execution.QueryExecution.$anonfun$executePhase$3(QueryExecution.scala:431)
-        at org.apache.spark.sql.execution.QueryExecution.withQueryExecutionId(QueryExecution.scala:450)
-        at org.apache.spark.sql.execution.QueryExecution.$anonfun$executePhase$2(QueryExecution.scala:431)
-        at org.apache.spark.sql.execution.QueryExecution$.withInternalError(QueryExecution.scala:927)
-        at org.apache.spark.sql.execution.QueryExecution.$anonfun$executePhase$1(QueryExecution.scala:430)
-        at org.apache.spark.sql.SparkSession.withActive(SparkSession.scala:810)
-        at org.apache.spark.sql.execution.QueryExecution.executePhase(QueryExecution.scala:429)
-        at org.apache.spark.sql.execution.QueryExecution.$anonfun$lazyAnalyzed$1(QueryExecution.scala:216)
-        at scala.util.Try$.apply(Try.scala:217)
-        at org.apache.spark.util.Utils$.doTryWithCallerStacktrace(Utils.scala:1407)
-        at org.apache.spark.util.LazyTry.tryT$lzycompute(LazyTry.scala:46)
-        at org.apache.spark.util.LazyTry.tryT(LazyTry.scala:46)
-        at org.apache.spark.util.LazyTry.get(LazyTry.scala:61)
-        at org.apache.spark.sql.execution.QueryExecution.$anonfun$analyzed$1(QueryExecution.scala:228)
-        at org.apache.spark.sql.execution.QueryExecution.withAbortTransactionOnFailure(QueryExecution.scala:653)
-        at org.apache.spark.sql.execution.QueryExecution.analyzed(QueryExecution.scala:228)
-        at org.apache.spark.sql.execution.QueryExecution.assertAnalyzed(QueryExecution.scala:167)
-        at org.apache.spark.sql.classic.Dataset$.$anonfun$ofRows$1(Dataset.scala:113)
-        at org.apache.spark.sql.SparkSession.withActive(SparkSession.scala:810)
-        at org.apache.spark.sql.classic.Dataset$.ofRows(Dataset.scala:111)
-        at org.apache.spark.sql.classic.DataFrameReader.load(DataFrameReader.scala:110)
-        at org.apache.spark.sql.classic.DataFrameReader.load(DataFrameReader.scala:59)
-        at org.apache.spark.sql.DataFrameReader.parquet(DataFrameReader.scala:457)
-        at org.apache.spark.sql.classic.DataFrameReader.parquet(DataFrameReader.scala:313)
-        at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-        at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
-        at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-        at java.base/java.lang.reflect.Method.invoke(Method.java:569)
-        at py4j.reflection.MethodInvoker.invoke(MethodInvoker.java:244)
-        at py4j.reflection.ReflectionEngine.invoke(ReflectionEngine.java:374)
-        at py4j.Gateway.invoke(Gateway.java:282)
-        at py4j.commands.AbstractCommand.invokeMethod(AbstractCommand.java:132)
-        at py4j.commands.CallCommand.execute(CallCommand.java:79)
-        at py4j.ClientServerConnection.waitForCommands(ClientServerConnection.java:184)
-        at py4j.ClientServerConnection.run(ClientServerConnection.java:108)
-        at java.base/java.lang.Thread.run(Thread.java:840)
+BRONZE DATA SCHEMA:
+root
+ |-- kafka_key: string (nullable = true)
+ |-- raw_json: string (nullable = false)
+ |-- topic: string (nullable = false)
+ |-- partition: integer (nullable = false)
+ |-- offset: long (nullable = false)
+ |-- kafka_ts: timestamp (nullable = false)
 
+
+BRONZE RECORDS:
++---------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------+---------+------+-------------------+
+|kafka_key|raw_json                                                                                                                                                                                                                                                                                                                                           |topic          |partition|offset|kafka_ts           |
++---------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------+---------+------+-------------------+
+|NEWS-001 |{"article_id": "NEWS-001", "published_at": "2026-11-10T08:30:00Z", "source": "Business Standard", "headline": "Reliance Industries shares rise after strong quarterly results", "full_text": "<p>Reliance Industries reported strong quarterly profits.</p>", "url": "https://example.com/reliance-results", "ingested_at": "2026-11-10T08:35:00Z"}|raw-news-events|0        |125   |2026-11-10 03:05:00|
+|NEWS-002 |{"article_id": "NEWS-002", "published_at": "2026-11-10T08:32:00Z", "source": "Moneycontrol", "headline": "SBI shares decline amid banking sector pressure", "full_text": "<p>State Bank of India shares declined during trading.</p>", "url": "https://example.com/sbi-decline", "ingested_at": "2026-11-10T08:36:00Z"}                            |raw-news-events|1        |126   |2026-11-10 03:06:00|
+|NEWS-003 |{"article_id": "NEWS-003", "published_at": "2026-11-10T08:34:00Z", "source": "CNBC-TV18", "headline": "Infosys announces expansion in artificial intelligence services", "full_text": "<p>Infosys Limited announced new AI service initiatives.</p>", "url": "https://example.com/infosys-ai", "ingested_at": "2026-11-10T08:37:00Z"}              |raw-news-events|2        |127   |2026-11-10 03:07:00|
+|NEWS-004 |{"article_id": "NEWS-004", "published_at": "2026-11-10T08:36:00Z", "source": "Business Standard", "headline": "HDFC Bank reports steady growth in quarterly deposits", "full_text": "<p>HDFC Bank reported steady deposit growth.</p>", "url": "https://example.com/hdfc-deposits", "ingested_at": "2026-11-10T08:38:00Z"}                         |raw-news-events|0        |128   |2026-11-10 03:08:00|
+|NEWS-005 |{"article_id": "NEWS-005", "published_at": "2026-11-10T08:38:00Z", "source": "Economic Times", "headline": "Reliance and TCS attract investor attention", "full_text": "<p>Reliance Industries and Tata Consultancy Services attracted investors.</p>", "url": "https://example.com/reliance-tcs", "ingested_at": "2026-11-10T08:40:00Z"}          |raw-news-events|1        |129   |2026-11-10 03:09:00|
+|NEWS-006 |{"article_id": "NEWS-006", "published_at": null, "source": "Moneycontrol", "headline": "ICICI Bank announces new banking initiatives", "full_text": "<p>ICICI Bank announced new initiatives.</p>", "url": "https://example.com/icici-news", "ingested_at": "2026-11-10T08:42:00Z"}                                                                |raw-news-events|2        |130   |2026-11-10 03:10:00|
+|NEWS-007 |{"article_id": "NEWS-007", "published_at": "2026-11-10T08:42:00Z", "source": "Business Standard", "headline": "Bharti Airtel expands its 5G network", "full_text": "<p>Bharti Airtel announced its network expansion.</p>", "url": "https://example.com/airtel-5g", "ingested_at": "2026-11-10T08:44:00Z"}                                         |raw-news-events|0        |131   |2026-11-10 03:11:00|
+|NEWS-008 |{"article_id": "NEWS-008", "published_at": "2026-11-10T08:45:00Z", "source": "Economic Times", "headline": "Tata Steel faces demand pressure", "full_text": null, "url": "https://example.com/tata-steel", "ingested_at": "2026-11-10T08:47:00Z"}                                                                                                  |raw-news-events|1        |132   |2026-11-10 03:12:00|
++---------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------+---------+------+-------------------+
+
+
+========== PARSING RAW JSON ==========
+
+========== EXTRACTED NEWS DATA ==========
++---------+---------------+---------+------+-------------------+----------+--------------------+-----------------+---------------------------------------------------------------+-----------------------------------------------------------------------------+------------------------------------+--------------------+
+|kafka_key|topic          |partition|offset|kafka_ts           |article_id|published_at        |source           |headline                                                       |full_text                                                                    |url                                 |ingested_at         |
++---------+---------------+---------+------+-------------------+----------+--------------------+-----------------+---------------------------------------------------------------+-----------------------------------------------------------------------------+------------------------------------+--------------------+
+|NEWS-001 |raw-news-events|0        |125   |2026-11-10 03:05:00|NEWS-001  |2026-11-10T08:30:00Z|Business Standard|Reliance Industries shares rise after strong quarterly results |<p>Reliance Industries reported strong quarterly profits.</p>                |https://example.com/reliance-results|2026-11-10T08:35:00Z|
+|NEWS-002 |raw-news-events|1        |126   |2026-11-10 03:06:00|NEWS-002  |2026-11-10T08:32:00Z|Moneycontrol     |SBI shares decline amid banking sector pressure                |<p>State Bank of India shares declined during trading.</p>                   |https://example.com/sbi-decline     |2026-11-10T08:36:00Z|
+|NEWS-003 |raw-news-events|2        |127   |2026-11-10 03:07:00|NEWS-003  |2026-11-10T08:34:00Z|CNBC-TV18        |Infosys announces expansion in artificial intelligence services|<p>Infosys Limited announced new AI service initiatives.</p>                 |https://example.com/infosys-ai      |2026-11-10T08:37:00Z|
+|NEWS-004 |raw-news-events|0        |128   |2026-11-10 03:08:00|NEWS-004  |2026-11-10T08:36:00Z|Business Standard|HDFC Bank reports steady growth in quarterly deposits          |<p>HDFC Bank reported steady deposit growth.</p>                             |https://example.com/hdfc-deposits   |2026-11-10T08:38:00Z|
+|NEWS-005 |raw-news-events|1        |129   |2026-11-10 03:09:00|NEWS-005  |2026-11-10T08:38:00Z|Economic Times   |Reliance and TCS attract investor attention                    |<p>Reliance Industries and Tata Consultancy Services attracted investors.</p>|https://example.com/reliance-tcs    |2026-11-10T08:40:00Z|
+|NEWS-006 |raw-news-events|2        |130   |2026-11-10 03:10:00|NEWS-006  |NULL                |Moneycontrol     |ICICI Bank announces new banking initiatives                   |<p>ICICI Bank announced new initiatives.</p>                                 |https://example.com/icici-news      |2026-11-10T08:42:00Z|
+|NEWS-007 |raw-news-events|0        |131   |2026-11-10 03:11:00|NEWS-007  |2026-11-10T08:42:00Z|Business Standard|Bharti Airtel expands its 5G network                           |<p>Bharti Airtel announced its network expansion.</p>                        |https://example.com/airtel-5g       |2026-11-10T08:44:00Z|
+|NEWS-008 |raw-news-events|1        |132   |2026-11-10 03:12:00|NEWS-008  |2026-11-10T08:45:00Z|Economic Times   |Tata Steel faces demand pressure                               |NULL                                                                         |https://example.com/tata-steel      |2026-11-10T08:47:00Z|
++---------+---------------+---------+------+-------------------+----------+--------------------+-----------------+---------------------------------------------------------------+-----------------------------------------------------------------------------+------------------------------------+--------------------+
+
+
+EXTRACTED NEWS SCHEMA:
+root
+ |-- kafka_key: string (nullable = true)
+ |-- topic: string (nullable = false)
+ |-- partition: integer (nullable = false)
+ |-- offset: long (nullable = false)
+ |-- kafka_ts: timestamp (nullable = false)
+ |-- article_id: string (nullable = true)
+ |-- published_at: string (nullable = true)
+ |-- source: string (nullable = true)
+ |-- headline: string (nullable = true)
+ |-- full_text: string (nullable = true)
+ |-- url: string (nullable = true)
+ |-- ingested_at: string (nullable = true)
+
+                                                                                
+TOTAL EXTRACTED ARTICLES: 8
+
+========== BASIC DATA CHECKS ==========
+Missing headlines: 0                                                            
+Missing full_text: 1                                                            
+Missing published_at: 1                                                         
+
+BRONZE READING AND JSON PARSING COMPLETED!
 
 SPARK SESSION STOPPED
-Traceback (most recent call last):
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\src\read_bronze.py", line 80, in <module>
-    bronze_df = spark.read.parquet(str(BRONZE_PATH))
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\sql\readwriter.py", line 699, in parquet
-    return self._df(self._jreader.parquet(_to_seq(self._spark._sc, paths)))
-                    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\py4j\java_gateway.py", line 1362, in __call__
-    return_value = get_return_value(
-        answer, self.gateway_client, self.target_id, self.name)
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\errors\exceptions\captured.py", line 256, in deco
-    return f(*a, **kw)
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\py4j\protocol.py", line 327, in get_return_value
-    raise Py4JJavaError(
-        "An error occurred while calling {0}{1}{2}.\n".
-        format(target_id, ".", name), value)
-py4j.protocol.Py4JJavaError: An error occurred while calling o29.parquet.
-: java.lang.UnsatisfiedLinkError: 'boolean org.apache.hadoop.io.nativeio.NativeIO$Windows.access0(java.lang.String, int)'
-        at org.apache.hadoop.io.nativeio.NativeIO$Windows.access0(Native Method)
-        at org.apache.hadoop.io.nativeio.NativeIO$Windows.access(NativeIO.java:817)
-        at org.apache.hadoop.fs.FileUtil.canRead(FileUtil.java:1415)
-        at org.apache.hadoop.fs.FileUtil.list(FileUtil.java:1620)
-        at org.apache.hadoop.fs.RawLocalFileSystem.listStatus(RawLocalFileSystem.java:802)
-        at org.apache.hadoop.fs.FileSystem.listStatus(FileSystem.java:2079)
-        at org.apache.hadoop.fs.FileSystem.listStatus(FileSystem.java:2123)
-        at org.apache.hadoop.fs.ChecksumFileSystem.listStatus(ChecksumFileSystem.java:1020)
-        at org.apache.spark.util.HadoopFSUtils$.listLeafFiles(HadoopFSUtils.scala:247)
-        at org.apache.spark.util.HadoopFSUtils$.$anonfun$parallelListLeafFilesInternal$1(HadoopFSUtils.scala:159)
-        at scala.collection.immutable.List.map(List.scala:236)
-        at scala.collection.immutable.List.map(List.scala:79)
-        at org.apache.spark.util.HadoopFSUtils$.parallelListLeafFilesInternal(HadoopFSUtils.scala:148)
-        at org.apache.spark.util.HadoopFSUtils$.parallelListLeafFiles(HadoopFSUtils.scala:90)
-        at org.apache.spark.sql.execution.datasources.InMemoryFileIndex$.bulkListLeafFiles(InMemoryFileIndex.scala:190)
-        at org.apache.spark.sql.execution.datasources.InMemoryFileIndex.listLeafFiles(InMemoryFileIndex.scala:141)
-        at org.apache.spark.sql.execution.datasources.InMemoryFileIndex.refresh0(InMemoryFileIndex.scala:98)
-        at org.apache.spark.sql.execution.datasources.InMemoryFileIndex.<init>(InMemoryFileIndex.scala:70)
-        at org.apache.spark.sql.execution.datasources.DataSource.createInMemoryFileIndex(DataSource.scala:605)
-        at org.apache.spark.sql.execution.datasources.DataSource.resolveRelation(DataSource.scala:444)
-        at org.apache.spark.sql.catalyst.analysis.ResolveDataSource.org$apache$spark$sql$catalyst$analysis$ResolveDataSource$$loadV1BatchSource(ResolveDataSource.scala:209)
-        at org.apache.spark.sql.catalyst.analysis.ResolveDataSource$$anonfun$apply$1.$anonfun$applyOrElse$2(ResolveDataSource.scala:61)
-        at scala.Option.getOrElse(Option.scala:201)
-        at org.apache.spark.sql.catalyst.analysis.ResolveDataSource$$anonfun$apply$1.applyOrElse(ResolveDataSource.scala:61)
-        at org.apache.spark.sql.catalyst.analysis.ResolveDataSource$$anonfun$apply$1.applyOrElse(ResolveDataSource.scala:45)
-        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.$anonfun$resolveOperatorsUpWithPruning$3(AnalysisHelper.scala:139)
-        at org.apache.spark.sql.catalyst.trees.CurrentOrigin$.withOrigin(origin.scala:107)
-        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.$anonfun$resolveOperatorsUpWithPruning$1(AnalysisHelper.scala:139)
-        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper$.allowInvokingTransformsInAnalyzer(AnalysisHelper.scala:416)
-        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.resolveOperatorsUpWithPruning(AnalysisHelper.scala:135)
-        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.resolveOperatorsUpWithPruning$(AnalysisHelper.scala:131)
-        at org.apache.spark.sql.catalyst.plans.logical.LogicalPlan.resolveOperatorsUpWithPruning(LogicalPlan.scala:38)
-        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.resolveOperatorsUp(AnalysisHelper.scala:112)
-        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.resolveOperatorsUp$(AnalysisHelper.scala:111)
-        at org.apache.spark.sql.catalyst.plans.logical.LogicalPlan.resolveOperatorsUp(LogicalPlan.scala:38)
-        at org.apache.spark.sql.catalyst.analysis.ResolveDataSource.apply(ResolveDataSource.scala:45)
-        at org.apache.spark.sql.catalyst.analysis.ResolveDataSource.apply(ResolveDataSource.scala:43)
-        at org.apache.spark.sql.catalyst.rules.RuleExecutor.$anonfun$execute$2(RuleExecutor.scala:248)
-        at scala.collection.LinearSeqOps.foldLeft(LinearSeq.scala:183)
-        at scala.collection.LinearSeqOps.foldLeft$(LinearSeq.scala:179)
-        at scala.collection.immutable.List.foldLeft(List.scala:79)
-        at org.apache.spark.sql.catalyst.rules.RuleExecutor.$anonfun$execute$1(RuleExecutor.scala:245)
-        at org.apache.spark.sql.catalyst.rules.RuleExecutor.$anonfun$execute$1$adapted(RuleExecutor.scala:237)
-        at scala.collection.immutable.List.foreach(List.scala:323)
-        at org.apache.spark.sql.catalyst.rules.RuleExecutor.execute(RuleExecutor.scala:237)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.super$execute(Analyzer.scala:504)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.$anonfun$executeSameContext$1(Analyzer.scala:504)
-        at org.apache.spark.sql.internal.SQLConf$.withExistingConf(SQLConf.scala:211)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.runWithSessionConf(Analyzer.scala:466)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.org$apache$spark$sql$catalyst$analysis$Analyzer$$executeSameContext(Analyzer.scala:504)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.$anonfun$execute$1(Analyzer.scala:499)
-        at org.apache.spark.sql.catalyst.analysis.AnalysisContext$.withNewAnalysisContext(Analyzer.scala:286)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.execute(Analyzer.scala:499)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.execute(Analyzer.scala:372)
-        at org.apache.spark.sql.catalyst.rules.RuleExecutor.$anonfun$executeAndTrack$1(RuleExecutor.scala:207)
-        at org.apache.spark.sql.catalyst.QueryPlanningTracker$.withTracker(QueryPlanningTracker.scala:92)
-        at org.apache.spark.sql.catalyst.rules.RuleExecutor.executeAndTrack(RuleExecutor.scala:207)
-        at org.apache.spark.sql.catalyst.analysis.resolver.HybridAnalyzer.resolveInFixedPoint(HybridAnalyzer.scala:281)
-        at org.apache.spark.sql.catalyst.analysis.resolver.HybridAnalyzer.$anonfun$apply$1(HybridAnalyzer.scala:90)
-        at org.apache.spark.sql.catalyst.analysis.resolver.HybridAnalyzer.withTrackedAnalyzerBridgeState(HybridAnalyzer.scala:125)
-        at org.apache.spark.sql.catalyst.analysis.resolver.HybridAnalyzer.apply(HybridAnalyzer.scala:82)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.runAnalysis$1(Analyzer.scala:434)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.$anonfun$executeAndCheck$2(Analyzer.scala:439)
-        at org.apache.spark.sql.internal.SQLConf$.withExistingConf(SQLConf.scala:211)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.runWithSessionConf(Analyzer.scala:466)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.$anonfun$executeAndCheck$1(Analyzer.scala:439)
-        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper$.markInAnalyzer(AnalysisHelper.scala:423)
-        at org.apache.spark.sql.catalyst.analysis.Analyzer.executeAndCheck(Analyzer.scala:439)
-        at org.apache.spark.sql.execution.QueryExecution.$anonfun$lazyAnalyzed$2(QueryExecution.scala:216)
-        at org.apache.spark.sql.catalyst.QueryPlanningTracker.measurePhase(QueryPlanningTracker.scala:151)
-        at org.apache.spark.sql.execution.QueryExecution.$anonfun$executePhase$3(QueryExecution.scala:431)
-        at org.apache.spark.sql.execution.QueryExecution.withQueryExecutionId(QueryExecution.scala:450)
-        at org.apache.spark.sql.execution.QueryExecution.$anonfun$executePhase$2(QueryExecution.scala:431)
-        at org.apache.spark.sql.execution.QueryExecution$.withInternalError(QueryExecution.scala:927)
-        at org.apache.spark.sql.execution.QueryExecution.$anonfun$executePhase$1(QueryExecution.scala:430)
-        at org.apache.spark.sql.SparkSession.withActive(SparkSession.scala:810)
-        at org.apache.spark.sql.execution.QueryExecution.executePhase(QueryExecution.scala:429)
-        at org.apache.spark.sql.execution.QueryExecution.$anonfun$lazyAnalyzed$1(QueryExecution.scala:216)
-        at scala.util.Try$.apply(Try.scala:217)
-        at org.apache.spark.util.Utils$.doTryWithCallerStacktrace(Utils.scala:1407)
-        at org.apache.spark.util.LazyTry.tryT$lzycompute(LazyTry.scala:46)
-        at org.apache.spark.util.LazyTry.tryT(LazyTry.scala:46)
-        at org.apache.spark.util.LazyTry.get(LazyTry.scala:61)
-        at org.apache.spark.sql.execution.QueryExecution.$anonfun$analyzed$1(QueryExecution.scala:228)
-        at org.apache.spark.sql.execution.QueryExecution.withAbortTransactionOnFailure(QueryExecution.scala:653)
-        at org.apache.spark.sql.execution.QueryExecution.analyzed(QueryExecution.scala:228)
-        at org.apache.spark.sql.execution.QueryExecution.assertAnalyzed(QueryExecution.scala:167)
-        at org.apache.spark.sql.classic.Dataset$.$anonfun$ofRows$1(Dataset.scala:113)
-        at org.apache.spark.sql.SparkSession.withActive(SparkSession.scala:810)
-        at org.apache.spark.sql.classic.Dataset$.ofRows(Dataset.scala:111)
-        at org.apache.spark.sql.classic.DataFrameReader.load(DataFrameReader.scala:110)
-        at org.apache.spark.sql.classic.DataFrameReader.load(DataFrameReader.scala:59)
-        at org.apache.spark.sql.DataFrameReader.parquet(DataFrameReader.scala:457)
-        at org.apache.spark.sql.classic.DataFrameReader.parquet(DataFrameReader.scala:313)
-        at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-        at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
-        at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-        at java.base/java.lang.reflect.Method.invoke(Method.java:569)
-        at py4j.reflection.MethodInvoker.invoke(MethodInvoker.java:244)
-        at py4j.reflection.ReflectionEngine.invoke(ReflectionEngine.java:374)
-        at py4j.Gateway.invoke(Gateway.java:282)
-        at py4j.commands.AbstractCommand.invokeMethod(AbstractCommand.java:132)
-        at py4j.commands.CallCommand.execute(CallCommand.java:79)
-        at py4j.ClientServerConnection.waitForCommands(ClientServerConnection.java:184)
-        at py4j.ClientServerConnection.run(ClientServerConnection.java:108)
-        at java.base/java.lang.Thread.run(Thread.java:840)
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> SUCCESS: The process with PID 29336 (child process of PID 20144) has been terminated.
+SUCCESS: The process with PID 20144 (child process of PID 28188) has been terminated.
+SUCCESS: The process with PID 28188 (child process of PID 13148) has been terminated.
 
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> SUCCESS: The process with PID 19480 (child process of PID 28688) has been terminated.
-SUCCESS: The process with PID 28688 (child process of PID 17932) has been terminated.
-SUCCESS: The process with PID 17932 (child process of PID 18312) has been terminated.
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> 
