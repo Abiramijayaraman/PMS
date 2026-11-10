@@ -1,43 +1,61 @@
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\src\deduplicate_news.py
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\src\extract_tickers.py 
+C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\src\extract_tickers.py:52: SyntaxWarning: "\w" is an invalid escape sequence. Such sequences will not work in the future. Did you mean "\\w"? A raw string is also an option.
+  r"(?<!\w)" + re.escape(alias) + r"(?!\w)",
 WARNING: Using incubator modules: jdk.incubator.vector
-26/11/10 16:52:21 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
+26/11/10 17:08:35 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
 Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
 Setting default log level to "WARN".
 To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
 C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\testing\utils.py:127: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
   require_minimum_pandas_version()
-26/11/10 16:52:22 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+26/11/10 17:08:36 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
 
-Reading Bronze news data...
-Total Bronze records: 8
-                                                                                
-Validation Results
-------------------
-Total records: 8
-Valid records: 8
-Invalid records: 0
-                                                                                
-Deduplication Results
----------------------
-Valid records: 8
-Duplicates removed: 0
-Unique records: 8
-                                                                                
-Deduplicated data saved successfully!
-Output: C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\deduplicated_news
-+----------+--------------------+-----------------+---------------------------------------------------------------+-----------------------------------------------------------------------------+------------------------------------+--------------------+---------------------------------------------------------------+----------------------------------------------------------------------+----------------------------------------------------------------------+
-|article_id|published_at        |source           |headline                                                       |full_text                                                                    |url                                 |ingested_at         |cleaned_headline                                               |cleaned_text                                                          |text_for_analysis                                                     |
-+----------+--------------------+-----------------+---------------------------------------------------------------+-----------------------------------------------------------------------------+------------------------------------+--------------------+---------------------------------------------------------------+----------------------------------------------------------------------+----------------------------------------------------------------------+
-|NEWS-001  |2026-11-10T08:30:00Z|Business Standard|Reliance Industries shares rise after strong quarterly results |<p>Reliance Industries reported strong quarterly profits.</p>                |https://example.com/reliance-results|2026-11-10T08:35:00Z|Reliance Industries shares rise after strong quarterly results |Reliance Industries reported strong quarterly profits.                |Reliance Industries reported strong quarterly profits.                |
-|NEWS-002  |2026-11-10T08:32:00Z|Moneycontrol     |SBI shares decline amid banking sector pressure                |<p>State Bank of India shares declined during trading.</p>                   |https://example.com/sbi-decline     |2026-11-10T08:36:00Z|SBI shares decline amid banking sector pressure                |State Bank of India shares declined during trading.                   |State Bank of India shares declined during trading.                   |
-|NEWS-003  |2026-11-10T08:34:00Z|CNBC-TV18        |Infosys announces expansion in artificial intelligence services|<p>Infosys Limited announced new AI service initiatives.</p>                 |https://example.com/infosys-ai      |2026-11-10T08:37:00Z|Infosys announces expansion in artificial intelligence services|Infosys Limited announced new AI service initiatives.                 |Infosys Limited announced new AI service initiatives.                 |
-|NEWS-004  |2026-11-10T08:36:00Z|Business Standard|HDFC Bank reports steady growth in quarterly deposits          |<p>HDFC Bank reported steady deposit growth.</p>                             |https://example.com/hdfc-deposits   |2026-11-10T08:38:00Z|HDFC Bank reports steady growth in quarterly deposits          |HDFC Bank reported steady deposit growth.                             |HDFC Bank reported steady deposit growth.                             |
-|NEWS-005  |2026-11-10T08:38:00Z|Economic Times   |Reliance and TCS attract investor attention                    |<p>Reliance Industries and Tata Consultancy Services attracted investors.</p>|https://example.com/reliance-tcs    |2026-11-10T08:40:00Z|Reliance and TCS attract investor attention                    |Reliance Industries and Tata Consultancy Services attracted investors.|Reliance Industries and Tata Consultancy Services attracted investors.|
-|NEWS-006  |NULL                |Moneycontrol     |ICICI Bank announces new banking initiatives                   |<p>ICICI Bank announced new initiatives.</p>                                 |https://example.com/icici-news      |2026-11-10T08:42:00Z|ICICI Bank announces new banking initiatives                   |ICICI Bank announced new initiatives.                                 |ICICI Bank announced new initiatives.                                 |
-|NEWS-007  |2026-11-10T08:42:00Z|Business Standard|Bharti Airtel expands its 5G network                           |<p>Bharti Airtel announced its network expansion.</p>                        |https://example.com/airtel-5g       |2026-11-10T08:44:00Z|Bharti Airtel expands its 5G network                           |Bharti Airtel announced its network expansion.                        |Bharti Airtel announced its network expansion.                        |
-|NEWS-008  |2026-11-10T08:45:00Z|Economic Times   |Tata Steel faces demand pressure                               |NULL                                                                         |https://example.com/tata-steel      |2026-11-10T08:47:00Z|Tata Steel faces demand pressure                               |NULL                                                                  |Tata Steel faces demand pressure                                      |
-+----------+--------------------+-----------------+---------------------------------------------------------------+-----------------------------------------------------------------------------+------------------------------------+--------------------+---------------------------------------------------------------+----------------------------------------------------------------------+----------------------------------------------------------------------+
+Reading deduplicated news...
+Total unique articles: 8
 
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> SUCCESS: The process with PID 11688 (child process of PID 7956) has been terminated.
-SUCCESS: The process with PID 7956 (child process of PID 14352) has been terminated.
-SUCCESS: The process with PID 14352 (child process of PID 27304) has been terminated
+Loading company aliases...
+Number of companies: 13
+                                                                                
+Ticker Extraction Results
+-------------------------
+Total articles: 8
+Articles with tickers: 8
+Articles without tickers: 0
++----------+---------------------------------------------------------------+---------------+
+|article_id|cleaned_headline                                               |matched_tickers|
++----------+---------------------------------------------------------------+---------------+
+|NEWS-001  |Reliance Industries shares rise after strong quarterly results |[RELIANCE]     |
+|NEWS-002  |SBI shares decline amid banking sector pressure                |[SBIN]         |
+|NEWS-003  |Infosys announces expansion in artificial intelligence services|[INFY]         |
+|NEWS-004  |HDFC Bank reports steady growth in quarterly deposits          |[HDFCBANK]     |
+|NEWS-005  |Reliance and TCS attract investor attention                    |[RELIANCE, TCS]|
+|NEWS-006  |ICICI Bank announces new banking initiatives                   |[ICICIBANK]    |
+|NEWS-007  |Bharti Airtel expands its 5G network                           |[BHARTIARTL]   |
+|NEWS-008  |Tata Steel faces demand pressure                               |[TATASTEEL]    |
++----------+---------------------------------------------------------------+---------------+
+
+
+News by Ticker:
++----------+----------+---------------------------------------------------------------+
+|article_id|ticker    |cleaned_headline                                               |
++----------+----------+---------------------------------------------------------------+
+|NEWS-001  |RELIANCE  |Reliance Industries shares rise after strong quarterly results |
+|NEWS-002  |SBIN      |SBI shares decline amid banking sector pressure                |
+|NEWS-003  |INFY      |Infosys announces expansion in artificial intelligence services|
+|NEWS-004  |HDFCBANK  |HDFC Bank reports steady growth in quarterly deposits          |
+|NEWS-005  |RELIANCE  |Reliance and TCS attract investor attention                    |
+|NEWS-005  |TCS       |Reliance and TCS attract investor attention                    |
+|NEWS-006  |ICICIBANK |ICICI Bank announces new banking initiatives                   |
+|NEWS-007  |BHARTIARTL|Bharti Airtel expands its 5G network                           |
+|NEWS-008  |TATASTEEL |Tata Steel faces demand pressure                               |
++----------+----------+---------------------------------------------------------------+
+
+Saved: C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\news_with_tickers
+Saved: C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\news_by_ticker
+
+Ticker extraction completed successfully!
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> SUCCESS: The process with PID 25948 (child process of PID 26184) has been terminated.
+SUCCESS: The process with PID 26184 (child process of PID 16960) has been terminated.
+SUCCESS: The process with PID 16960 (child process of PID 22004) has been terminated.
+
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> 
