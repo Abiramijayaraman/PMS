@@ -1,86 +1,63 @@
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\src\read_bronze.py
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\src\validate_news.py
 WARNING: Using incubator modules: jdk.incubator.vector
-26/11/10 15:45:29 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
+26/11/10 15:55:21 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
 Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
 Setting default log level to "WARN".
 To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
 C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\testing\utils.py:127: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
   require_minimum_pandas_version()
-26/11/10 15:45:31 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+26/11/10 15:55:23 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
 
-========== READING BRONZE PARQUET ==========
+========== READING BRONZE DATA ==========
 Total Bronze records: 8
 
-BRONZE DATA SCHEMA:
-root
- |-- kafka_key: string (nullable = true)
- |-- raw_json: string (nullable = false)
- |-- topic: string (nullable = false)
- |-- partition: integer (nullable = false)
- |-- offset: long (nullable = false)
- |-- kafka_ts: timestamp (nullable = false)
+Bronze input records:
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+|raw_json                                                                                                                                                                                                                                                                                                                                           |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+|{"article_id": "NEWS-001", "published_at": "2026-11-10T08:30:00Z", "source": "Business Standard", "headline": "Reliance Industries shares rise after strong quarterly results", "full_text": "<p>Reliance Industries reported strong quarterly profits.</p>", "url": "https://example.com/reliance-results", "ingested_at": "2026-11-10T08:35:00Z"}|
+|{"article_id": "NEWS-002", "published_at": "2026-11-10T08:32:00Z", "source": "Moneycontrol", "headline": "SBI shares decline amid banking sector pressure", "full_text": "<p>State Bank of India shares declined during trading.</p>", "url": "https://example.com/sbi-decline", "ingested_at": "2026-11-10T08:36:00Z"}                            |
+|{"article_id": "NEWS-003", "published_at": "2026-11-10T08:34:00Z", "source": "CNBC-TV18", "headline": "Infosys announces expansion in artificial intelligence services", "full_text": "<p>Infosys Limited announced new AI service initiatives.</p>", "url": "https://example.com/infosys-ai", "ingested_at": "2026-11-10T08:37:00Z"}              |
+|{"article_id": "NEWS-004", "published_at": "2026-11-10T08:36:00Z", "source": "Business Standard", "headline": "HDFC Bank reports steady growth in quarterly deposits", "full_text": "<p>HDFC Bank reported steady deposit growth.</p>", "url": "https://example.com/hdfc-deposits", "ingested_at": "2026-11-10T08:38:00Z"}                         |
+|{"article_id": "NEWS-005", "published_at": "2026-11-10T08:38:00Z", "source": "Economic Times", "headline": "Reliance and TCS attract investor attention", "full_text": "<p>Reliance Industries and Tata Consultancy Services attracted investors.</p>", "url": "https://example.com/reliance-tcs", "ingested_at": "2026-11-10T08:40:00Z"}          |
+|{"article_id": "NEWS-006", "published_at": null, "source": "Moneycontrol", "headline": "ICICI Bank announces new banking initiatives", "full_text": "<p>ICICI Bank announced new initiatives.</p>", "url": "https://example.com/icici-news", "ingested_at": "2026-11-10T08:42:00Z"}                                                                |
+|{"article_id": "NEWS-007", "published_at": "2026-11-10T08:42:00Z", "source": "Business Standard", "headline": "Bharti Airtel expands its 5G network", "full_text": "<p>Bharti Airtel announced its network expansion.</p>", "url": "https://example.com/airtel-5g", "ingested_at": "2026-11-10T08:44:00Z"}                                         |
+|{"article_id": "NEWS-008", "published_at": "2026-11-10T08:45:00Z", "source": "Economic Times", "headline": "Tata Steel faces demand pressure", "full_text": null, "url": "https://example.com/tata-steel", "ingested_at": "2026-11-10T08:47:00Z"}                                                                                                  |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 
 
-BRONZE RECORDS:
-+---------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------+---------+------+-------------------+
-|kafka_key|raw_json                                                                                                                                                                                                                                                                                                                                           |topic          |partition|offset|kafka_ts           |
-+---------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------+---------+------+-------------------+
-|NEWS-001 |{"article_id": "NEWS-001", "published_at": "2026-11-10T08:30:00Z", "source": "Business Standard", "headline": "Reliance Industries shares rise after strong quarterly results", "full_text": "<p>Reliance Industries reported strong quarterly profits.</p>", "url": "https://example.com/reliance-results", "ingested_at": "2026-11-10T08:35:00Z"}|raw-news-events|0        |125   |2026-11-10 03:05:00|
-|NEWS-002 |{"article_id": "NEWS-002", "published_at": "2026-11-10T08:32:00Z", "source": "Moneycontrol", "headline": "SBI shares decline amid banking sector pressure", "full_text": "<p>State Bank of India shares declined during trading.</p>", "url": "https://example.com/sbi-decline", "ingested_at": "2026-11-10T08:36:00Z"}                            |raw-news-events|1        |126   |2026-11-10 03:06:00|
-|NEWS-003 |{"article_id": "NEWS-003", "published_at": "2026-11-10T08:34:00Z", "source": "CNBC-TV18", "headline": "Infosys announces expansion in artificial intelligence services", "full_text": "<p>Infosys Limited announced new AI service initiatives.</p>", "url": "https://example.com/infosys-ai", "ingested_at": "2026-11-10T08:37:00Z"}              |raw-news-events|2        |127   |2026-11-10 03:07:00|
-|NEWS-004 |{"article_id": "NEWS-004", "published_at": "2026-11-10T08:36:00Z", "source": "Business Standard", "headline": "HDFC Bank reports steady growth in quarterly deposits", "full_text": "<p>HDFC Bank reported steady deposit growth.</p>", "url": "https://example.com/hdfc-deposits", "ingested_at": "2026-11-10T08:38:00Z"}                         |raw-news-events|0        |128   |2026-11-10 03:08:00|
-|NEWS-005 |{"article_id": "NEWS-005", "published_at": "2026-11-10T08:38:00Z", "source": "Economic Times", "headline": "Reliance and TCS attract investor attention", "full_text": "<p>Reliance Industries and Tata Consultancy Services attracted investors.</p>", "url": "https://example.com/reliance-tcs", "ingested_at": "2026-11-10T08:40:00Z"}          |raw-news-events|1        |129   |2026-11-10 03:09:00|
-|NEWS-006 |{"article_id": "NEWS-006", "published_at": null, "source": "Moneycontrol", "headline": "ICICI Bank announces new banking initiatives", "full_text": "<p>ICICI Bank announced new initiatives.</p>", "url": "https://example.com/icici-news", "ingested_at": "2026-11-10T08:42:00Z"}                                                                |raw-news-events|2        |130   |2026-11-10 03:10:00|
-|NEWS-007 |{"article_id": "NEWS-007", "published_at": "2026-11-10T08:42:00Z", "source": "Business Standard", "headline": "Bharti Airtel expands its 5G network", "full_text": "<p>Bharti Airtel announced its network expansion.</p>", "url": "https://example.com/airtel-5g", "ingested_at": "2026-11-10T08:44:00Z"}                                         |raw-news-events|0        |131   |2026-11-10 03:11:00|
-|NEWS-008 |{"article_id": "NEWS-008", "published_at": "2026-11-10T08:45:00Z", "source": "Economic Times", "headline": "Tata Steel faces demand pressure", "full_text": null, "url": "https://example.com/tata-steel", "ingested_at": "2026-11-10T08:47:00Z"}                                                                                                  |raw-news-events|1        |132   |2026-11-10 03:12:00|
-+---------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------+---------+------+-------------------+
+========== PARSING NEWS JSON ==========
 
-
-========== PARSING RAW JSON ==========
-
-========== EXTRACTED NEWS DATA ==========
-+---------+---------------+---------+------+-------------------+----------+--------------------+-----------------+---------------------------------------------------------------+-----------------------------------------------------------------------------+------------------------------------+--------------------+
-|kafka_key|topic          |partition|offset|kafka_ts           |article_id|published_at        |source           |headline                                                       |full_text                                                                    |url                                 |ingested_at         |
-+---------+---------------+---------+------+-------------------+----------+--------------------+-----------------+---------------------------------------------------------------+-----------------------------------------------------------------------------+------------------------------------+--------------------+
-|NEWS-001 |raw-news-events|0        |125   |2026-11-10 03:05:00|NEWS-001  |2026-11-10T08:30:00Z|Business Standard|Reliance Industries shares rise after strong quarterly results |<p>Reliance Industries reported strong quarterly profits.</p>                |https://example.com/reliance-results|2026-11-10T08:35:00Z|
-|NEWS-002 |raw-news-events|1        |126   |2026-11-10 03:06:00|NEWS-002  |2026-11-10T08:32:00Z|Moneycontrol     |SBI shares decline amid banking sector pressure                |<p>State Bank of India shares declined during trading.</p>                   |https://example.com/sbi-decline     |2026-11-10T08:36:00Z|
-|NEWS-003 |raw-news-events|2        |127   |2026-11-10 03:07:00|NEWS-003  |2026-11-10T08:34:00Z|CNBC-TV18        |Infosys announces expansion in artificial intelligence services|<p>Infosys Limited announced new AI service initiatives.</p>                 |https://example.com/infosys-ai      |2026-11-10T08:37:00Z|
-|NEWS-004 |raw-news-events|0        |128   |2026-11-10 03:08:00|NEWS-004  |2026-11-10T08:36:00Z|Business Standard|HDFC Bank reports steady growth in quarterly deposits          |<p>HDFC Bank reported steady deposit growth.</p>                             |https://example.com/hdfc-deposits   |2026-11-10T08:38:00Z|
-|NEWS-005 |raw-news-events|1        |129   |2026-11-10 03:09:00|NEWS-005  |2026-11-10T08:38:00Z|Economic Times   |Reliance and TCS attract investor attention                    |<p>Reliance Industries and Tata Consultancy Services attracted investors.</p>|https://example.com/reliance-tcs    |2026-11-10T08:40:00Z|
-|NEWS-006 |raw-news-events|2        |130   |2026-11-10 03:10:00|NEWS-006  |NULL                |Moneycontrol     |ICICI Bank announces new banking initiatives                   |<p>ICICI Bank announced new initiatives.</p>                                 |https://example.com/icici-news      |2026-11-10T08:42:00Z|
-|NEWS-007 |raw-news-events|0        |131   |2026-11-10 03:11:00|NEWS-007  |2026-11-10T08:42:00Z|Business Standard|Bharti Airtel expands its 5G network                           |<p>Bharti Airtel announced its network expansion.</p>                        |https://example.com/airtel-5g       |2026-11-10T08:44:00Z|
-|NEWS-008 |raw-news-events|1        |132   |2026-11-10 03:12:00|NEWS-008  |2026-11-10T08:45:00Z|Economic Times   |Tata Steel faces demand pressure                               |NULL                                                                         |https://example.com/tata-steel      |2026-11-10T08:47:00Z|
-+---------+---------------+---------+------+-------------------+----------+--------------------+-----------------+---------------------------------------------------------------+-----------------------------------------------------------------------------+------------------------------------+--------------------+
-
-
-EXTRACTED NEWS SCHEMA:
-root
- |-- kafka_key: string (nullable = true)
- |-- topic: string (nullable = false)
- |-- partition: integer (nullable = false)
- |-- offset: long (nullable = false)
- |-- kafka_ts: timestamp (nullable = false)
- |-- article_id: string (nullable = true)
- |-- published_at: string (nullable = true)
- |-- source: string (nullable = true)
- |-- headline: string (nullable = true)
- |-- full_text: string (nullable = true)
- |-- url: string (nullable = true)
- |-- ingested_at: string (nullable = true)
-
+========== VALIDATING NEWS ==========
                                                                                 
-TOTAL EXTRACTED ARTICLES: 8
+========== VALIDATION SUMMARY ==========
+Total records  : 8
+Valid records  : 8
+Invalid records: 0
 
-========== BASIC DATA CHECKS ==========
-Missing headlines: 0                                                            
-Missing full_text: 1                                                            
-Missing published_at: 1                                                         
+========== VALID NEWS ==========
++----------+---------------------------------------------------------------+--------------------+-----------------+
+|article_id|headline                                                       |published_at        |validation_status|
++----------+---------------------------------------------------------------+--------------------+-----------------+
+|NEWS-001  |Reliance Industries shares rise after strong quarterly results |2026-11-10T08:30:00Z|VALID            |
+|NEWS-002  |SBI shares decline amid banking sector pressure                |2026-11-10T08:32:00Z|VALID            |
+|NEWS-003  |Infosys announces expansion in artificial intelligence services|2026-11-10T08:34:00Z|VALID            |
+|NEWS-004  |HDFC Bank reports steady growth in quarterly deposits          |2026-11-10T08:36:00Z|VALID            |
+|NEWS-005  |Reliance and TCS attract investor attention                    |2026-11-10T08:38:00Z|VALID            |
+|NEWS-006  |ICICI Bank announces new banking initiatives                   |NULL                |VALID            |
+|NEWS-007  |Bharti Airtel expands its 5G network                           |2026-11-10T08:42:00Z|VALID            |
+|NEWS-008  |Tata Steel faces demand pressure                               |2026-11-10T08:45:00Z|VALID            |
++----------+---------------------------------------------------------------+--------------------+-----------------+
 
-BRONZE READING AND JSON PARSING COMPLETED!
 
-SPARK SESSION STOPPED
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> SUCCESS: The process with PID 29336 (child process of PID 20144) has been terminated.
-SUCCESS: The process with PID 20144 (child process of PID 28188) has been terminated.
-SUCCESS: The process with PID 28188 (child process of PID 13148) has been terminated.
+========== INVALID NEWS / DEAD-LETTER CANDIDATES ==========
++----------+---+-----------------+-----------------+                            
+|article_id|url|validation_reason|validation_status|
++----------+---+-----------------+-----------------+
++----------+---+-----------------+-----------------+
 
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> 
+
+News validation completed successfully!
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> SUCCESS: The process with PID 23944 (child process of PID 30032) has been terminated.
+SUCCESS: The process with PID 30032 (child process of PID 26576) has been terminated.
+SUCCESS: The process with PID 26576 (child process of PID 17276) has been terminated.
