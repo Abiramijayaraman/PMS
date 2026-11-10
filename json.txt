@@ -1,1 +1,8 @@
-python -c "import json; samples=['{\"article_id\":\"TEST-005\",\"headline\":\"Valid JSON\"}', '{\"article_id\":\"TEST-006\",\"headline\":\"Missing comma\" \"url\":\"https://example.com\"}']; exec('for x in samples:\n try:\n  json.loads(x)\n  print(\"VALID JSON\")\n except json.JSONDecodeError as e:\n  print(\"INVALID JSON:\", e)')"
+SyntaxError: leading zeros in decimal integer literals are not permitted; use an 0o prefix for octal integers
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python -c "import json; samples=['{\"article_id\":\"TEST-005\",\"headline\":\"Valid JSON\"}', '{\"article_id\":\"TEST-006\",\"headline\":\"Missing comma\" \"url\":\"https://example.com\"}']; exec('for x in samples:\n try:\n  json.loads(x)\n  print(\"VALID JSON\")\n except json.JSONDecodeError as e:\n  print(\"INVALID JSON:\", e)')"
+<string>:1: SyntaxWarning: "\:" is an invalid escape sequence. Such sequences will not work in the future. Did you mean "\\:"? A raw string is also an option.
+  File "<string>", line 1
+    import json; samples=['{" article_id\:\TEST-005\,\headline\:\Valid JSON\}',
+                         ^
+SyntaxError: '[' was never closed
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> 
