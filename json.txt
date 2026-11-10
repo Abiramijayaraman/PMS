@@ -1,12 +1,12 @@
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\src\clean_news.py   
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\src\clean_news.py
 WARNING: Using incubator modules: jdk.incubator.vector
-26/11/10 16:04:08 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
+26/11/10 16:19:18 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
 Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
 Setting default log level to "WARN".
 To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
 C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\testing\utils.py:127: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
   require_minimum_pandas_version()
-26/11/10 16:04:11 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+26/11/10 16:19:19 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
 
 ========== READING BRONZE DATA ==========
 Total Bronze records: 8
@@ -14,313 +14,33 @@ Total Bronze records: 8
 ========== PARSING NEWS JSON ==========
 
 ========== VALIDATING NEWS ==========
-Valid records: 8                                                                
+Total records  : 8                                                              
+Valid records  : 8
 Invalid records: 0
-C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\sql\udf.py:116: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
-  require_minimum_pandas_version()
 
 ========== CLEANING NEWS TEXT ==========
 
 ========== CLEANED NEWS ==========
-26/11/10 16:05:28 ERROR Executor: Exception in task 2.0 in stage 7.0 (TID 21) 4]
-org.apache.spark.SparkException: Python worker exited unexpectedly (crashed). Consider setting 'spark.sql.execution.pyspark.udf.faulthandler.enabled' or'spark.python.worker.faulthandler.enabled' configuration to 'true' for the better Python traceback.
-        at org.apache.spark.api.python.BasePythonRunner$ReaderIterator$$anonfun$1.applyOrElse(PythonRunner.scala:1136)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderIterator$$anonfun$1.applyOrElse(PythonRunner.scala:1118)
-        at scala.runtime.AbstractPartialFunction.apply(AbstractPartialFunction.scala:35)
-        at org.apache.spark.api.python.PythonRunner$$anon$5.read(PythonRunner.scala:1647)
-        at org.apache.spark.api.python.PythonRunner$$anon$5.read(PythonRunner.scala:1624)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderIterator.hasNext(PythonRunner.scala:1034)
-        at org.apache.spark.InterruptibleIterator.hasNext(InterruptibleIterator.scala:37)
-        at scala.collection.Iterator$$anon$10.hasNext(Iterator.scala:611)
-        at scala.collection.Iterator$$anon$9.hasNext(Iterator.scala:593)
-        at scala.collection.Iterator$$anon$9.hasNext(Iterator.scala:593)
-        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$GeneratedIteratorForCodegenStage1.processNext(Unknown Source)
-        at org.apache.spark.sql.execution.BufferedRowIterator.hasNext(BufferedRowIterator.java:44)
-        at org.apache.spark.sql.execution.WholeStageCodegenEvaluatorFactory$WholeStageCodegenPartitionEvaluator$$anon$1.hasNext(WholeStageCodegenEvaluatorFactory.scala:50)
-        at scala.collection.Iterator$$anon$6.hasNext(Iterator.scala:487)
-        at scala.collection.Iterator$$anon$9.hasNext(Iterator.scala:593)
-        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$GeneratedIteratorForCodegenStage2.processNext(Unknown Source)
-        at org.apache.spark.sql.execution.BufferedRowIterator.hasNext(BufferedRowIterator.java:44)
-        at org.apache.spark.sql.execution.WholeStageCodegenEvaluatorFactory$WholeStageCodegenPartitionEvaluator$$anon$1.hasNext(WholeStageCodegenEvaluatorFactory.scala:50)
-        at scala.collection.Iterator$$anon$9.hasNext(Iterator.scala:593)
-        at scala.collection.Iterator$$anon$9.hasNext(Iterator.scala:593)
-        at org.apache.spark.sql.execution.python.BatchedPythonArrowInput.writeNextBatchToArrowStream(PythonArrowInput.scala:176)
-        at org.apache.spark.sql.execution.python.BatchedPythonArrowInput.writeNextBatchToArrowStream$(PythonArrowInput.scala:166)
-        at org.apache.spark.sql.execution.python.ArrowEvalPythonEvaluatorFactory$$anon$2.writeNextBatchToArrowStream(ArrowEvalPythonExec.scala:198)
-        at org.apache.spark.sql.execution.python.PythonArrowInput$$anon$1.writeNextInputToStream(PythonArrowInput.scala:108)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderInputStream.writeBufferedInputToPythonWorker(PythonRunner.scala:1417)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderInputStream.writeAdditionalInputToPythonWorker(PythonRunner.scala:1386)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderInputStream.read(PythonRunner.scala:1316)
-        at java.base/java.io.BufferedInputStream.fill(BufferedInputStream.java:244)
-        at java.base/java.io.BufferedInputStream.read(BufferedInputStream.java:263)
-        at java.base/java.io.DataInputStream.readInt(DataInputStream.java:381)
-        at org.apache.spark.sql.execution.python.PythonArrowOutput$$anon$1.read(PythonArrowOutput.scala:124)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderIterator.hasNext(PythonRunner.scala:1034)
-        at org.apache.spark.InterruptibleIterator.hasNext(InterruptibleIterator.scala:37)
-        at scala.collection.Iterator$$anon$10.hasNext(Iterator.scala:611)
-        at scala.collection.Iterator$$anon$9.hasNext(Iterator.scala:593)
-        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$GeneratedIteratorForCodegenStage3.processNext(Unknown Source)
-        at org.apache.spark.sql.execution.BufferedRowIterator.hasNext(BufferedRowIterator.java:44)
-        at org.apache.spark.sql.execution.WholeStageCodegenEvaluatorFactory$WholeStageCodegenPartitionEvaluator$$anon$1.hasNext(WholeStageCodegenEvaluatorFactory.scala:50)
-        at org.apache.spark.sql.execution.SparkPlan.$anonfun$getByteArrayRdd$2(SparkPlan.scala:418)
-        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:960)
-        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:960)
-        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:57)
-        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:374)
-        at org.apache.spark.rdd.RDD.iterator(RDD.scala:338)
-        at org.apache.spark.scheduler.ResultTask.runTask(ResultTask.scala:93)
-        at org.apache.spark.TaskContext.runTaskWithListeners(TaskContext.scala:240)
-        at org.apache.spark.scheduler.Task.run(Task.scala:147)
-        at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:903)
-        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:86)
-        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:83)
-        at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:97)
-        at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:906)
-        at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
-        at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
-        at java.base/java.lang.Thread.run(Thread.java:840)
-Caused by: java.io.IOException: An established connection was aborted by the software in your host machine
-        at java.base/sun.nio.ch.SocketDispatcher.write0(Native Method)
-        at java.base/sun.nio.ch.SocketDispatcher.write(SocketDispatcher.java:54)
-        at java.base/sun.nio.ch.IOUtil.writeFromNativeBuffer(IOUtil.java:132)
-        at java.base/sun.nio.ch.IOUtil.write(IOUtil.java:76)
-        at java.base/sun.nio.ch.IOUtil.write(IOUtil.java:53)
-        at java.base/sun.nio.ch.SocketChannelImpl.write(SocketChannelImpl.java:532)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderInputStream.writeBufferedInputToPythonWorker(PythonRunner.scala:1428)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderInputStream.writeAdditionalInputToPythonWorker(PythonRunner.scala:1386)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderInputStream.read(PythonRunner.scala:1316)
-        at java.base/java.io.BufferedInputStream.fill(BufferedInputStream.java:244)
-        at java.base/java.io.BufferedInputStream.read(BufferedInputStream.java:263)
-        at java.base/java.io.DataInputStream.readInt(DataInputStream.java:381)
-        at org.apache.spark.api.python.PythonRunner$$anon$5.read(PythonRunner.scala:1632)
-        ... 51 more
-26/11/10 16:05:28 ERROR TaskSetManager: Task 2 in stage 7.0 failed 1 times; aborting job
-Traceback (most recent call last):                                  (0 + 2) / 4]
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\src\clean_news.py", line 338, in <module>
-    ).show(truncate=False)
-      ~~~~^^^^^^^^^^^^^^^^
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\sql\classic\dataframe.py", line 302, in show
-    print(self._show_string(n, truncate, vertical))
-          ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\sql\classic\dataframe.py", line 342, in _show_string
-    return self._jdf.showString(n, int_truncate, vertical)
-           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\py4j\java_gateway.py", line 1362, in __call__
-    return_value = get_return_value(
-        answer, self.gateway_client, self.target_id, self.name)
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\errors\exceptions\captured.py", line 256, in deco
-    return f(*a, **kw)
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\py4j\protocol.py", line 327, in get_return_value
-    raise Py4JJavaError(
-        "An error occurred while calling {0}{1}{2}.\n".
-        format(target_id, ".", name), value)
-py4j.protocol.Py4JJavaError: An error occurred while calling o216.showString.
-: org.apache.spark.SparkException: Job aborted due to stage failure: Task 2 in stage 7.0 failed 1 times, most recent failure: Lost task 2.0 in stage 7.0 (TID 21) (LTCH-5CD141CTM4 executor driver): org.apache.spark.SparkException: Python worker exited unexpectedly (crashed). Consider setting 'spark.sql.execution.pyspark.udf.faulthandler.enabled' or'spark.python.worker.faulthandler.enabled' configuration to 'true' for the better Python traceback.
-        at org.apache.spark.api.python.BasePythonRunner$ReaderIterator$$anonfun$1.applyOrElse(PythonRunner.scala:1136)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderIterator$$anonfun$1.applyOrElse(PythonRunner.scala:1118)
-        at scala.runtime.AbstractPartialFunction.apply(AbstractPartialFunction.scala:35)
-        at org.apache.spark.api.python.PythonRunner$$anon$5.read(PythonRunner.scala:1647)
-        at org.apache.spark.api.python.PythonRunner$$anon$5.read(PythonRunner.scala:1624)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderIterator.hasNext(PythonRunner.scala:1034)
-        at org.apache.spark.InterruptibleIterator.hasNext(InterruptibleIterator.scala:37)
-        at scala.collection.Iterator$$anon$10.hasNext(Iterator.scala:611)
-        at scala.collection.Iterator$$anon$9.hasNext(Iterator.scala:593)
-        at scala.collection.Iterator$$anon$9.hasNext(Iterator.scala:593)
-        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$GeneratedIteratorForCodegenStage1.processNext(Unknown Source)
-        at org.apache.spark.sql.execution.BufferedRowIterator.hasNext(BufferedRowIterator.java:44)
-        at org.apache.spark.sql.execution.WholeStageCodegenEvaluatorFactory$WholeStageCodegenPartitionEvaluator$$anon$1.hasNext(WholeStageCodegenEvaluatorFactory.scala:50)
-        at scala.collection.Iterator$$anon$6.hasNext(Iterator.scala:487)
-        at scala.collection.Iterator$$anon$9.hasNext(Iterator.scala:593)
-        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$GeneratedIteratorForCodegenStage2.processNext(Unknown Source)
-        at org.apache.spark.sql.execution.BufferedRowIterator.hasNext(BufferedRowIterator.java:44)
-        at org.apache.spark.sql.execution.WholeStageCodegenEvaluatorFactory$WholeStageCodegenPartitionEvaluator$$anon$1.hasNext(WholeStageCodegenEvaluatorFactory.scala:50)
-        at scala.collection.Iterator$$anon$9.hasNext(Iterator.scala:593)
-        at scala.collection.Iterator$$anon$9.hasNext(Iterator.scala:593)
-        at org.apache.spark.sql.execution.python.BatchedPythonArrowInput.writeNextBatchToArrowStream(PythonArrowInput.scala:176)
-        at org.apache.spark.sql.execution.python.BatchedPythonArrowInput.writeNextBatchToArrowStream$(PythonArrowInput.scala:166)
-        at org.apache.spark.sql.execution.python.ArrowEvalPythonEvaluatorFactory$$anon$2.writeNextBatchToArrowStream(ArrowEvalPythonExec.scala:198)
-        at org.apache.spark.sql.execution.python.PythonArrowInput$$anon$1.writeNextInputToStream(PythonArrowInput.scala:108)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderInputStream.writeBufferedInputToPythonWorker(PythonRunner.scala:1417)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderInputStream.writeAdditionalInputToPythonWorker(PythonRunner.scala:1386)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderInputStream.read(PythonRunner.scala:1316)
-        at java.base/java.io.BufferedInputStream.fill(BufferedInputStream.java:244)
-        at java.base/java.io.BufferedInputStream.read(BufferedInputStream.java:263)
-        at java.base/java.io.DataInputStream.readInt(DataInputStream.java:381)
-        at org.apache.spark.sql.execution.python.PythonArrowOutput$$anon$1.read(PythonArrowOutput.scala:124)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderIterator.hasNext(PythonRunner.scala:1034)
-        at org.apache.spark.InterruptibleIterator.hasNext(InterruptibleIterator.scala:37)
-        at scala.collection.Iterator$$anon$10.hasNext(Iterator.scala:611)
-        at scala.collection.Iterator$$anon$9.hasNext(Iterator.scala:593)
-        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$GeneratedIteratorForCodegenStage3.processNext(Unknown Source)
-        at org.apache.spark.sql.execution.BufferedRowIterator.hasNext(BufferedRowIterator.java:44)
-        at org.apache.spark.sql.execution.WholeStageCodegenEvaluatorFactory$WholeStageCodegenPartitionEvaluator$$anon$1.hasNext(WholeStageCodegenEvaluatorFactory.scala:50)
-        at org.apache.spark.sql.execution.SparkPlan.$anonfun$getByteArrayRdd$2(SparkPlan.scala:418)
-        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:960)
-        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:960)
-        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:57)
-        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:374)
-        at org.apache.spark.rdd.RDD.iterator(RDD.scala:338)
-        at org.apache.spark.scheduler.ResultTask.runTask(ResultTask.scala:93)
-        at org.apache.spark.TaskContext.runTaskWithListeners(TaskContext.scala:240)
-        at org.apache.spark.scheduler.Task.run(Task.scala:147)
-        at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:903)
-        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:86)
-        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:83)
-        at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:97)
-        at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:906)
-        at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
-        at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
-        at java.base/java.lang.Thread.run(Thread.java:840)
-Caused by: java.io.IOException: An established connection was aborted by the software in your host machine
-        at java.base/sun.nio.ch.SocketDispatcher.write0(Native Method)
-        at java.base/sun.nio.ch.SocketDispatcher.write(SocketDispatcher.java:54)
-        at java.base/sun.nio.ch.IOUtil.writeFromNativeBuffer(IOUtil.java:132)
-        at java.base/sun.nio.ch.IOUtil.write(IOUtil.java:76)
-        at java.base/sun.nio.ch.IOUtil.write(IOUtil.java:53)
-        at java.base/sun.nio.ch.SocketChannelImpl.write(SocketChannelImpl.java:532)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderInputStream.writeBufferedInputToPythonWorker(PythonRunner.scala:1428)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderInputStream.writeAdditionalInputToPythonWorker(PythonRunner.scala:1386)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderInputStream.read(PythonRunner.scala:1316)
-        at java.base/java.io.BufferedInputStream.fill(BufferedInputStream.java:244)
-        at java.base/java.io.BufferedInputStream.read(BufferedInputStream.java:263)
-        at java.base/java.io.DataInputStream.readInt(DataInputStream.java:381)
-        at org.apache.spark.api.python.PythonRunner$$anon$5.read(PythonRunner.scala:1632)
-        ... 51 more
++----------+---------------------------------------------------------------+---------------------------------------------------------------+-----------------------------------------------------------------------------+----------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+|article_id|headline                                                       |cleaned_headline                                               |full_text                                                                    |cleaned_text                                                          |text_for_analysis                                                                                                    |
++----------+---------------------------------------------------------------+---------------------------------------------------------------+-----------------------------------------------------------------------------+----------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+|NEWS-001  |Reliance Industries shares rise after strong quarterly results |Reliance Industries shares rise after strong quarterly results |<p>Reliance Industries reported strong quarterly profits.</p>                |Reliance Industries reported strong quarterly profits.                |Reliance Industries shares rise after strong quarterly results Reliance Industries reported strong quarterly profits.|
+|NEWS-002  |SBI shares decline amid banking sector pressure                |SBI shares decline amid banking sector pressure                |<p>State Bank of India shares declined during trading.</p>                   |State Bank of India shares declined during trading.                   |SBI shares decline amid banking sector pressure State Bank of India shares declined during trading.                  |
+|NEWS-003  |Infosys announces expansion in artificial intelligence services|Infosys announces expansion in artificial intelligence services|<p>Infosys Limited announced new AI service initiatives.</p>                 |Infosys Limited announced new AI service initiatives.                 |Infosys announces expansion in artificial intelligence services Infosys Limited announced new AI service initiatives.|
+|NEWS-004  |HDFC Bank reports steady growth in quarterly deposits          |HDFC Bank reports steady growth in quarterly deposits          |<p>HDFC Bank reported steady deposit growth.</p>                             |HDFC Bank reported steady deposit growth.                             |HDFC Bank reports steady growth in quarterly deposits HDFC Bank reported steady deposit growth.                      |
+|NEWS-005  |Reliance and TCS attract investor attention                    |Reliance and TCS attract investor attention                    |<p>Reliance Industries and Tata Consultancy Services attracted investors.</p>|Reliance Industries and Tata Consultancy Services attracted investors.|Reliance and TCS attract investor attention Reliance Industries and Tata Consultancy Services attracted investors.   |
+|NEWS-006  |ICICI Bank announces new banking initiatives                   |ICICI Bank announces new banking initiatives                   |<p>ICICI Bank announced new initiatives.</p>                                 |ICICI Bank announced new initiatives.                                 |ICICI Bank announces new banking initiatives ICICI Bank announced new initiatives.                                   |
+|NEWS-007  |Bharti Airtel expands its 5G network                           |Bharti Airtel expands its 5G network                           |<p>Bharti Airtel announced its network expansion.</p>                        |Bharti Airtel announced its network expansion.                        |Bharti Airtel expands its 5G network Bharti Airtel announced its network expansion.                                  |
+|NEWS-008  |Tata Steel faces demand pressure                               |Tata Steel faces demand pressure                               |NULL                                                                         |NULL                                                                  |Tata Steel faces demand pressure                                                                                     |
++----------+---------------------------------------------------------------+---------------------------------------------------------------+-----------------------------------------------------------------------------+----------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
 
-Driver stacktrace:
-        at org.apache.spark.scheduler.DAGScheduler.$anonfun$abortStage$3(DAGScheduler.scala:4568)
-        at scala.Option.getOrElse(Option.scala:201)
-        at org.apache.spark.scheduler.DAGScheduler.$anonfun$abortStage$2(DAGScheduler.scala:4568)
-        at org.apache.spark.scheduler.DAGScheduler.$anonfun$abortStage$2$adapted(DAGScheduler.scala:4560)
-        at scala.collection.immutable.List.foreach(List.scala:323)
-        at org.apache.spark.scheduler.DAGScheduler.abortStage(DAGScheduler.scala:4560)
-        at org.apache.spark.scheduler.DAGScheduler.$anonfun$handleTaskSetFailed$1(DAGScheduler.scala:2054)
-        at org.apache.spark.scheduler.DAGScheduler.$anonfun$handleTaskSetFailed$1$adapted(DAGScheduler.scala:2054)
-        at scala.Option.foreach(Option.scala:437)
-        at org.apache.spark.scheduler.DAGScheduler.handleTaskSetFailed(DAGScheduler.scala:2054)
-        at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.doOnReceive(DAGScheduler.scala:4839)
-        at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.onReceive(DAGScheduler.scala:4767)
-        at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.onReceive(DAGScheduler.scala:4756)
-        at org.apache.spark.util.EventLoop$$anon$1.run(EventLoop.scala:50)
-        at org.apache.spark.scheduler.DAGScheduler.runJob(DAGScheduler.scala:1549)
-        at org.apache.spark.SparkContext.runJob(SparkContext.scala:2499)
-        at org.apache.spark.SparkContext.runJob(SparkContext.scala:2520)
-        at org.apache.spark.SparkContext.runJob(SparkContext.scala:2539)
-        at org.apache.spark.sql.execution.SparkPlan.executeTake(SparkPlan.scala:562)
-        at org.apache.spark.sql.execution.SparkPlan.executeTake(SparkPlan.scala:515)
-        at org.apache.spark.sql.execution.CollectLimitExec.executeCollect(limit.scala:58)
-        at org.apache.spark.sql.classic.Dataset.collectFromPlan(Dataset.scala:2335)
-        at org.apache.spark.sql.classic.Dataset.$anonfun$head$1(Dataset.scala:1470)
-        at org.apache.spark.sql.classic.Dataset.$anonfun$withAction$3(Dataset.scala:2324)
-        at org.apache.spark.sql.execution.QueryExecution$.withInternalError(QueryExecution.scala:927)
-        at org.apache.spark.sql.classic.Dataset.$anonfun$withAction$2(Dataset.scala:2322)
-        at org.apache.spark.sql.execution.QueryExecution.withQueryExecutionId(QueryExecution.scala:450)
-        at org.apache.spark.sql.classic.Dataset.$anonfun$withAction$1(Dataset.scala:2322)
-        at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId0$8(SQLExecution.scala:228)
-        at org.apache.spark.sql.execution.SQLExecution$.withSessionTagsApplied(SQLExecution.scala:352)
-        at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId0$7(SQLExecution.scala:189)
-        at org.apache.spark.JobArtifactSet$.withActiveJobArtifactState(JobArtifactSet.scala:94)
-        at org.apache.spark.sql.artifact.ArtifactManager.$anonfun$withResources$1(ArtifactManager.scala:112)
-        at org.apache.spark.sql.artifact.ArtifactManager.withClassLoaderIfNeeded(ArtifactManager.scala:106)
-        at org.apache.spark.sql.artifact.ArtifactManager.withResources(ArtifactManager.scala:111)
-        at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId0$6(SQLExecution.scala:189)
-        at org.apache.spark.sql.execution.SQLExecution$.withSQLConfPropagated(SQLExecution.scala:375)
-        at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId0$1(SQLExecution.scala:188)
-        at org.apache.spark.sql.SparkSession.withActive(SparkSession.scala:810)
-        at org.apache.spark.sql.execution.SQLExecution$.withNewExecutionId0(SQLExecution.scala:130)
-        at org.apache.spark.sql.execution.SQLExecution$.withNewExecutionId(SQLExecution.scala:317)
-        at org.apache.spark.sql.classic.Dataset.withAction(Dataset.scala:2321)
-        at org.apache.spark.sql.classic.Dataset.head(Dataset.scala:1470)
-        at org.apache.spark.sql.Dataset.take(Dataset.scala:2939)
-        at org.apache.spark.sql.classic.Dataset.getRows(Dataset.scala:337)
-        at org.apache.spark.sql.classic.Dataset.showString(Dataset.scala:373)
-        at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-        at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
-        at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-        at java.base/java.lang.reflect.Method.invoke(Method.java:569)
-        at py4j.reflection.MethodInvoker.invoke(MethodInvoker.java:244)
-        at py4j.reflection.ReflectionEngine.invoke(ReflectionEngine.java:374)
-        at py4j.Gateway.invoke(Gateway.java:282)
-        at py4j.commands.AbstractCommand.invokeMethod(AbstractCommand.java:132)
-        at py4j.commands.CallCommand.execute(CallCommand.java:79)
-        at py4j.ClientServerConnection.waitForCommands(ClientServerConnection.java:184)
-        at py4j.ClientServerConnection.run(ClientServerConnection.java:108)
-        at java.base/java.lang.Thread.run(Thread.java:840)
-Caused by: org.apache.spark.SparkException: Python worker exited unexpectedly (crashed). Consider setting 'spark.sql.execution.pyspark.udf.faulthandler.enabled' or'spark.python.worker.faulthandler.enabled' configuration to 'true' for the better Python traceback.
-        at org.apache.spark.api.python.BasePythonRunner$ReaderIterator$$anonfun$1.applyOrElse(PythonRunner.scala:1136)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderIterator$$anonfun$1.applyOrElse(PythonRunner.scala:1118)
-        at scala.runtime.AbstractPartialFunction.apply(AbstractPartialFunction.scala:35)
-        at org.apache.spark.api.python.PythonRunner$$anon$5.read(PythonRunner.scala:1647)
-        at org.apache.spark.api.python.PythonRunner$$anon$5.read(PythonRunner.scala:1624)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderIterator.hasNext(PythonRunner.scala:1034)
-        at org.apache.spark.InterruptibleIterator.hasNext(InterruptibleIterator.scala:37)
-        at scala.collection.Iterator$$anon$10.hasNext(Iterator.scala:611)
-        at scala.collection.Iterator$$anon$9.hasNext(Iterator.scala:593)
-        at scala.collection.Iterator$$anon$9.hasNext(Iterator.scala:593)
-        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$GeneratedIteratorForCodegenStage1.processNext(Unknown Source)
-        at org.apache.spark.sql.execution.BufferedRowIterator.hasNext(BufferedRowIterator.java:44)
-        at org.apache.spark.sql.execution.WholeStageCodegenEvaluatorFactory$WholeStageCodegenPartitionEvaluator$$anon$1.hasNext(WholeStageCodegenEvaluatorFactory.scala:50)
-        at scala.collection.Iterator$$anon$6.hasNext(Iterator.scala:487)
-        at scala.collection.Iterator$$anon$9.hasNext(Iterator.scala:593)
-        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$GeneratedIteratorForCodegenStage2.processNext(Unknown Source)
-        at org.apache.spark.sql.execution.BufferedRowIterator.hasNext(BufferedRowIterator.java:44)
-        at org.apache.spark.sql.execution.WholeStageCodegenEvaluatorFactory$WholeStageCodegenPartitionEvaluator$$anon$1.hasNext(WholeStageCodegenEvaluatorFactory.scala:50)
-        at scala.collection.Iterator$$anon$9.hasNext(Iterator.scala:593)
-        at scala.collection.Iterator$$anon$9.hasNext(Iterator.scala:593)
-        at org.apache.spark.sql.execution.python.BatchedPythonArrowInput.writeNextBatchToArrowStream(PythonArrowInput.scala:176)
-        at org.apache.spark.sql.execution.python.BatchedPythonArrowInput.writeNextBatchToArrowStream$(PythonArrowInput.scala:166)
-        at org.apache.spark.sql.execution.python.ArrowEvalPythonEvaluatorFactory$$anon$2.writeNextBatchToArrowStream(ArrowEvalPythonExec.scala:198)
-        at org.apache.spark.sql.execution.python.PythonArrowInput$$anon$1.writeNextInputToStream(PythonArrowInput.scala:108)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderInputStream.writeBufferedInputToPythonWorker(PythonRunner.scala:1417)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderInputStream.writeAdditionalInputToPythonWorker(PythonRunner.scala:1386)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderInputStream.read(PythonRunner.scala:1316)
-        at java.base/java.io.BufferedInputStream.fill(BufferedInputStream.java:244)
-        at java.base/java.io.BufferedInputStream.read(BufferedInputStream.java:263)
-        at java.base/java.io.DataInputStream.readInt(DataInputStream.java:381)
-        at org.apache.spark.sql.execution.python.PythonArrowOutput$$anon$1.read(PythonArrowOutput.scala:124)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderIterator.hasNext(PythonRunner.scala:1034)
-        at org.apache.spark.InterruptibleIterator.hasNext(InterruptibleIterator.scala:37)
-        at scala.collection.Iterator$$anon$10.hasNext(Iterator.scala:611)
-        at scala.collection.Iterator$$anon$9.hasNext(Iterator.scala:593)
-        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$GeneratedIteratorForCodegenStage3.processNext(Unknown Source)
-        at org.apache.spark.sql.execution.BufferedRowIterator.hasNext(BufferedRowIterator.java:44)
-        at org.apache.spark.sql.execution.WholeStageCodegenEvaluatorFactory$WholeStageCodegenPartitionEvaluator$$anon$1.hasNext(WholeStageCodegenEvaluatorFactory.scala:50)
-        at org.apache.spark.sql.execution.SparkPlan.$anonfun$getByteArrayRdd$2(SparkPlan.scala:418)
-        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:960)
-        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:960)
-        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:57)
-        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:374)
-        at org.apache.spark.rdd.RDD.iterator(RDD.scala:338)
-        at org.apache.spark.scheduler.ResultTask.runTask(ResultTask.scala:93)
-        at org.apache.spark.TaskContext.runTaskWithListeners(TaskContext.scala:240)
-        at org.apache.spark.scheduler.Task.run(Task.scala:147)
-        at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:903)
-        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:86)
-        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:83)
-        at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:97)
-        at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:906)
-        at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
-        at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
-        ... 1 more
-Caused by: java.io.IOException: An established connection was aborted by the software in your host machine
-        at java.base/sun.nio.ch.SocketDispatcher.write0(Native Method)
-        at java.base/sun.nio.ch.SocketDispatcher.write(SocketDispatcher.java:54)
-        at java.base/sun.nio.ch.IOUtil.writeFromNativeBuffer(IOUtil.java:132)
-        at java.base/sun.nio.ch.IOUtil.write(IOUtil.java:76)
-        at java.base/sun.nio.ch.IOUtil.write(IOUtil.java:53)
-        at java.base/sun.nio.ch.SocketChannelImpl.write(SocketChannelImpl.java:532)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderInputStream.writeBufferedInputToPythonWorker(PythonRunner.scala:1428)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderInputStream.writeAdditionalInputToPythonWorker(PythonRunner.scala:1386)
-        at org.apache.spark.api.python.BasePythonRunner$ReaderInputStream.read(PythonRunner.scala:1316)
-        at java.base/java.io.BufferedInputStream.fill(BufferedInputStream.java:244)
-        at java.base/java.io.BufferedInputStream.read(BufferedInputStream.java:263)
-        at java.base/java.io.DataInputStream.readInt(DataInputStream.java:381)
-        at org.apache.spark.api.python.PythonRunner$$anon$5.read(PythonRunner.scala:1632)
-        ... 51 more
 
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> SUCCESS: The process with PID 29228 (child process of PID 14172) has been terminated.
-SUCCESS: The process with PID 28040 (child process of PID 14172) has been terminated.
-SUCCESS: The process with PID 14172 (child process of PID 5092) has been terminated.
-SUCCESS: The process with PID 5092 (child process of PID 20580) has been terminated.
-SUCCESS: The process with PID 20580 (child process of PID 29060) has been terminated.
-SUCCESS: The process with PID 29060 (child process of PID 29184) has been terminated.
+========== CLEANING SUMMARY ==========
+Total Bronze records : 8
+Valid news records   : 8
+Invalid news records : 0
+
+HTML cleaning completed successfully!
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> SUCCESS: The process with PID 27872 (child process of PID 29580) has been terminated.
+SUCCESS: The process with PID 29580 (child process of PID 27008) has been terminated.
+SUCCESS: The process with PID 27008 (child process of PID 29368) has been terminated.
