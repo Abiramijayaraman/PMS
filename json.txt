@@ -1,12 +1,12 @@
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\src\clean_news.py
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\src\deduplicate_news.py
 WARNING: Using incubator modules: jdk.incubator.vector
-26/11/10 16:19:18 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
+26/11/10 16:25:28 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
 Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
 Setting default log level to "WARN".
 To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
 C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\testing\utils.py:127: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
   require_minimum_pandas_version()
-26/11/10 16:19:19 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+26/11/10 16:25:29 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
 
 ========== READING BRONZE DATA ==========
 Total Bronze records: 8
@@ -20,27 +20,42 @@ Invalid records: 0
 
 ========== CLEANING NEWS TEXT ==========
 
-========== CLEANED NEWS ==========
-+----------+---------------------------------------------------------------+---------------------------------------------------------------+-----------------------------------------------------------------------------+----------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
-|article_id|headline                                                       |cleaned_headline                                               |full_text                                                                    |cleaned_text                                                          |text_for_analysis                                                                                                    |
-+----------+---------------------------------------------------------------+---------------------------------------------------------------+-----------------------------------------------------------------------------+----------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
-|NEWS-001  |Reliance Industries shares rise after strong quarterly results |Reliance Industries shares rise after strong quarterly results |<p>Reliance Industries reported strong quarterly profits.</p>                |Reliance Industries reported strong quarterly profits.                |Reliance Industries shares rise after strong quarterly results Reliance Industries reported strong quarterly profits.|
-|NEWS-002  |SBI shares decline amid banking sector pressure                |SBI shares decline amid banking sector pressure                |<p>State Bank of India shares declined during trading.</p>                   |State Bank of India shares declined during trading.                   |SBI shares decline amid banking sector pressure State Bank of India shares declined during trading.                  |
-|NEWS-003  |Infosys announces expansion in artificial intelligence services|Infosys announces expansion in artificial intelligence services|<p>Infosys Limited announced new AI service initiatives.</p>                 |Infosys Limited announced new AI service initiatives.                 |Infosys announces expansion in artificial intelligence services Infosys Limited announced new AI service initiatives.|
-|NEWS-004  |HDFC Bank reports steady growth in quarterly deposits          |HDFC Bank reports steady growth in quarterly deposits          |<p>HDFC Bank reported steady deposit growth.</p>                             |HDFC Bank reported steady deposit growth.                             |HDFC Bank reports steady growth in quarterly deposits HDFC Bank reported steady deposit growth.                      |
-|NEWS-005  |Reliance and TCS attract investor attention                    |Reliance and TCS attract investor attention                    |<p>Reliance Industries and Tata Consultancy Services attracted investors.</p>|Reliance Industries and Tata Consultancy Services attracted investors.|Reliance and TCS attract investor attention Reliance Industries and Tata Consultancy Services attracted investors.   |
-|NEWS-006  |ICICI Bank announces new banking initiatives                   |ICICI Bank announces new banking initiatives                   |<p>ICICI Bank announced new initiatives.</p>                                 |ICICI Bank announced new initiatives.                                 |ICICI Bank announces new banking initiatives ICICI Bank announced new initiatives.                                   |
-|NEWS-007  |Bharti Airtel expands its 5G network                           |Bharti Airtel expands its 5G network                           |<p>Bharti Airtel announced its network expansion.</p>                        |Bharti Airtel announced its network expansion.                        |Bharti Airtel expands its 5G network Bharti Airtel announced its network expansion.                                  |
-|NEWS-008  |Tata Steel faces demand pressure                               |Tata Steel faces demand pressure                               |NULL                                                                         |NULL                                                                  |Tata Steel faces demand pressure                                                                                     |
-+----------+---------------------------------------------------------------+---------------------------------------------------------------+-----------------------------------------------------------------------------+----------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+========== IDENTIFYING DUPLICATES ==========
+Records involved in duplicates: 0                                               
+Duplicate records to remove   : 0
+
+========== DUPLICATE RECORDS ==========
++----------+--------+-----------+-------------------+                           
+|article_id|headline|ingested_at|article_occurrences|
++----------+--------+-----------+-------------------+
++----------+--------+-----------+-------------------+
 
 
-========== CLEANING SUMMARY ==========
-Total Bronze records : 8
-Valid news records   : 8
-Invalid news records : 0
+========== DEDUPLICATING NEWS ==========
+                                                                                
+========== DEDUPLICATED NEWS ==========
++----------+---------------------------------------------------------------+--------------------+---------------------------------------------------------------+----------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+|article_id|headline                                                       |ingested_at         |cleaned_headline                                               |cleaned_text                                                          |text_for_analysis                                                                                                    |
++----------+---------------------------------------------------------------+--------------------+---------------------------------------------------------------+----------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+|NEWS-001  |Reliance Industries shares rise after strong quarterly results |2026-11-10T08:35:00Z|Reliance Industries shares rise after strong quarterly results |Reliance Industries reported strong quarterly profits.                |Reliance Industries shares rise after strong quarterly results Reliance Industries reported strong quarterly profits.|
+|NEWS-002  |SBI shares decline amid banking sector pressure                |2026-11-10T08:36:00Z|SBI shares decline amid banking sector pressure                |State Bank of India shares declined during trading.                   |SBI shares decline amid banking sector pressure State Bank of India shares declined during trading.                  |
+|NEWS-003  |Infosys announces expansion in artificial intelligence services|2026-11-10T08:37:00Z|Infosys announces expansion in artificial intelligence services|Infosys Limited announced new AI service initiatives.                 |Infosys announces expansion in artificial intelligence services Infosys Limited announced new AI service initiatives.|
+|NEWS-004  |HDFC Bank reports steady growth in quarterly deposits          |2026-11-10T08:38:00Z|HDFC Bank reports steady growth in quarterly deposits          |HDFC Bank reported steady deposit growth.                             |HDFC Bank reports steady growth in quarterly deposits HDFC Bank reported steady deposit growth.                      |
+|NEWS-005  |Reliance and TCS attract investor attention                    |2026-11-10T08:40:00Z|Reliance and TCS attract investor attention                    |Reliance Industries and Tata Consultancy Services attracted investors.|Reliance and TCS attract investor attention Reliance Industries and Tata Consultancy Services attracted investors.   |
+|NEWS-006  |ICICI Bank announces new banking initiatives                   |2026-11-10T08:42:00Z|ICICI Bank announces new banking initiatives                   |ICICI Bank announced new initiatives.                                 |ICICI Bank announces new banking initiatives ICICI Bank announced new initiatives.                                   |
+|NEWS-007  |Bharti Airtel expands its 5G network                           |2026-11-10T08:44:00Z|Bharti Airtel expands its 5G network                           |Bharti Airtel announced its network expansion.                        |Bharti Airtel expands its 5G network Bharti Airtel announced its network expansion.                                  |
+|NEWS-008  |Tata Steel faces demand pressure                               |2026-11-10T08:47:00Z|Tata Steel faces demand pressure                               |NULL                                                                  |Tata Steel faces demand pressure                                                                                     |
++----------+---------------------------------------------------------------+--------------------+---------------------------------------------------------------+----------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
 
-HTML cleaning completed successfully!
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> SUCCESS: The process with PID 27872 (child process of PID 29580) has been terminated.
-SUCCESS: The process with PID 29580 (child process of PID 27008) has been terminated.
-SUCCESS: The process with PID 27008 (child process of PID 29368) has been terminated.
+
+========== DEDUPLICATION SUMMARY ==========
+Total Bronze records       : 8
+Valid records              : 8
+Invalid records            : 0
+Duplicate records removed  : 0
+Final unique news records  : 8
+
+News deduplication completed successfully!
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> SUCCESS: The process with PID 16396 (child process of PID 15708) has been terminated.
+SUCCESS: The process with PID 15708 (child process of PID 28036) has been terminated.
+SUCCESS: The process with PID 28036 (child process of PID 11376) has been terminated.
