@@ -1,388 +1,216 @@
-
-
-import os
 import sys
-import json
-import re
-import shutil
 from pathlib import Path
  
-import pyarrow as pa
-import pyarrow.parquet as pq
- 
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import (
-    col,
-    lit,
-    when,
-    array,
-    filter as array_filter,
-    explode,
-    size
+import torch
+from transformers import (
+    AutoTokenizer,
+    AutoModelForSequenceClassification
 )
  
  
 # --------------------------------------------------
-# 1. PROJECT PATHS
+# 1. FIND THE LOCAL FINBERT MODEL
 # --------------------------------------------------
  
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_FOLDER = Path(__file__).resolve().parents[1]
  
-INPUT_PATH = (
-    PROJECT_ROOT / "silver_news" / "data"
-    / "processed" / "deduplicated_news"
-)
+MODEL_PATH = PROJECT_FOLDER / "models" / "finbert"
  
-ALIAS_PATH = (
-    PROJECT_ROOT / "silver_news" / "config"
-    / "company_aliases.json"
-)
- 
-NEWS_OUTPUT_PATH = (
-    PROJECT_ROOT / "silver_news" / "data"
-    / "processed" / "news_with_tickers"
-)
- 
-TICKER_OUTPUT_PATH = (
-    PROJECT_ROOT / "silver_news" / "data"
-    / "processed" / "news_by_ticker"
-)
+print("FinBERT local model path:", MODEL_PATH)
  
  
 # --------------------------------------------------
-# 2. CONFIGURE PYTHON FOR SPARK
+# 2. CHECK WHETHER ALL REQUIRED FILES EXIST
 # --------------------------------------------------
  
-os.environ["PYSPARK_PYTHON"] = sys.executable
-os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
+required_files = [
+    "config.json",
+    "model.safetensors",
+    "tokenizer_config.json",
+    "special_tokens_map.json",
+    "vocab.txt"
+]
+ 
+missing_files = [
+    filename
+    for filename in required_files
+    if not (MODEL_PATH / filename).exists()
+]
+ 
+if missing_files:
+    print("\nERROR: Required model files are missing:")
+ 
+    for filename in missing_files:
+        print("-", filename)
+ 
+    sys.exit(1)
+ 
+ 
+print("\nAll required FinBERT files are available.")
  
  
 # --------------------------------------------------
-# 3. CREATE SPARK SESSION
+# 3. SELECT THE COMPUTING DEVICE
 # --------------------------------------------------
  
-spark = (
-    SparkSession.builder
-    .appName("SilverNewsTickerExtraction")
-    .master("local[*]")
-    .getOrCreate()
+DEVICE = torch.device(
+    "cuda" if torch.cuda.is_available() else "cpu"
 )
  
-spark.sparkContext.setLogLevel("ERROR")
+print("\nUsing device:", DEVICE)
  
  
-try:
+# --------------------------------------------------
+# 4. LOAD FINBERT LOCALLY
+# --------------------------------------------------
  
-    # --------------------------------------------------
-    # 4. READ DEDUPLICATED NEWS
-    # --------------------------------------------------
+print("\nLoading FinBERT tokenizer...")
  
-    print("\nReading deduplicated news...")
+tokenizer = AutoTokenizer.from_pretrained(
+    str(MODEL_PATH),
+    local_files_only=True
+)
  
-    if not INPUT_PATH.exists():
-        raise FileNotFoundError(
-            f"Input path not found: {INPUT_PATH}"
-        )
+print("Tokenizer loaded successfully.")
  
-    table = pq.read_table(INPUT_PATH)
+print("\nLoading FinBERT model...")
  
-    records = table.to_pylist()
+model = AutoModelForSequenceClassification.from_pretrained(
+    str(MODEL_PATH),
+    local_files_only=True
+)
  
-    print("Total unique articles:", len(records))
+model.to(DEVICE)
+model.eval()
  
-    if not records:
-        raise ValueError(
-            "No deduplicated news records found."
-        )
- 
-    df = spark.createDataFrame(records)
+print("FinBERT model loaded successfully!")
  
  
-    # --------------------------------------------------
-    # 5. LOAD COMPANY ALIASES
-    # --------------------------------------------------
+# --------------------------------------------------
+# 5. READ SENTIMENT LABELS FROM MODEL CONFIG
+# --------------------------------------------------
  
-    print("\nLoading company aliases...")
+id2label = model.config.id2label
  
-    if not ALIAS_PATH.exists():
-        raise FileNotFoundError(
-            f"Alias file not found: {ALIAS_PATH}"
-        )
+print("\nModel sentiment labels:")
+print(id2label)
  
-    with open(
-        ALIAS_PATH,
-        "r",
-        encoding="utf-8"
-    ) as file:
  
-        company_aliases = json.load(file)
+# --------------------------------------------------
+# 6. SENTIMENT ANALYSIS FUNCTION
+# --------------------------------------------------
+ 
+def analyse_sentiment(news_text):
+ 
+    # Convert news text into tokens
+    inputs = tokenizer(
+        news_text,
+        return_tensors="pt",
+        truncation=True,
+        max_length=512
+    )
+ 
+    # Move input tensors to the selected device
+    inputs = {
+        key: value.to(DEVICE)
+        for key, value in inputs.items()
+    }
+ 
+    # Disable gradient calculation during prediction
+    with torch.no_grad():
+ 
+        outputs = model(**inputs)
+ 
+        # Convert model logits into probabilities
+        probabilities = torch.softmax(
+            outputs.logits,
+            dim=-1
+        )[0]
+ 
+    # Associate each probability with its actual label
+    scores = {
+        str(id2label[index]).lower(): probabilities[index].item()
+        for index in range(len(probabilities))
+    }
+ 
+    # Identify the highest-probability sentiment
+    sentiment = max(scores, key=scores.get)
+ 
+    positive_probability = scores.get("positive", 0.0)
+    negative_probability = scores.get("negative", 0.0)
+    neutral_probability = scores.get("neutral", 0.0)
+ 
+    # Calculate sentiment score
+    sentiment_score = (
+        positive_probability - negative_probability
+    )
+ 
+    return {
+        "sentiment": sentiment,
+        "positive_probability": positive_probability,
+        "negative_probability": negative_probability,
+        "neutral_probability": neutral_probability,
+        "sentiment_score": sentiment_score
+    }
+ 
+ 
+# --------------------------------------------------
+# 7. TEST WITH SAMPLE FINANCIAL NEWS
+# --------------------------------------------------
+ 
+sample_news = [
+ 
+    "Reliance Industries reports strong quarterly profits.",
+ 
+    "TCS faces declining revenue and weak market demand.",
+ 
+    "HDFC Bank announces its quarterly financial results.",
+ 
+    "Infosys shares rise after announcing a major AI investment.",
+ 
+    "stocks to watch today: SBI",
+]
+ 
+ 
+# --------------------------------------------------
+# 8. DISPLAY PREDICTIONS
+# --------------------------------------------------
+ 
+print("\n" + "=" * 60)
+print("FINBERT FINANCIAL NEWS SENTIMENT ANALYSIS")
+print("=" * 60)
+ 
+for index, news in enumerate(sample_news, start=1):
+ 
+    result = analyse_sentiment(news)
+ 
+    print(f"\nARTICLE {index}")
+    print("-" * 60)
+ 
+    print("News:", news)
+ 
+    print("Predicted sentiment:", result["sentiment"])
  
     print(
-        "Number of companies:",
-        len(company_aliases)
-    )
- 
- 
-    # --------------------------------------------------
-    # 6. EXTRACT TICKERS
-    # --------------------------------------------------
- 
-    print("\nExtracting company tickers...")
- 
-    analysis_text = col("text_for_analysis")
- 
-    ticker_conditions = []
- 
-    for ticker, aliases in company_aliases.items():
- 
-        patterns = []
- 
-        for alias in aliases:
- 
-            escaped_alias = re.escape(alias)
- 
-            pattern = (
-                r"(?i)(^|[^A-Za-z0-9])"
-                + escaped_alias
-                + r"([^A-Za-z0-9]|$)"
-            )
- 
-            patterns.append(pattern)
- 
-        combined_pattern = "|".join(patterns)
- 
-        condition = analysis_text.rlike(
-            combined_pattern
-        )
- 
-        ticker_conditions.append(
-            when(condition, lit(ticker))
-        )
- 
- 
-    # Create an array containing only matched tickers.
- 
-    df_with_tickers = df.withColumn(
-        "matched_tickers",
-        array_filter(
-            array(*ticker_conditions),
-            lambda ticker: ticker.isNotNull()
-        )
-    )
- 
- 
-    # --------------------------------------------------
-    # 7. DISPLAY EXTRACTION RESULTS
-    # --------------------------------------------------
- 
-    total_articles = df_with_tickers.count()
- 
-    matched_articles = (
-        df_with_tickers
-        .filter(size(col("matched_tickers")) > 0)
-        .count()
-    )
- 
-    unmatched_articles = (
-        total_articles - matched_articles
-    )
- 
-    print("\nTicker Extraction Results")
-    print("-------------------------")
- 
-    print("Total articles:", total_articles)
- 
-    print(
-        "Articles with tickers:",
-        matched_articles
+        "Positive probability:",
+        round(result["positive_probability"], 4)
     )
  
     print(
-        "Articles without tickers:",
-        unmatched_articles
+        "Negative probability:",
+        round(result["negative_probability"], 4)
     )
- 
-    df_with_tickers.select(
-        "article_id",
-        "cleaned_headline",
-        "matched_tickers"
-    ).show(truncate=False)
- 
- 
-    # --------------------------------------------------
-    # 8. CREATE NEWS BY TICKER
-    # --------------------------------------------------
- 
-    news_by_ticker_df = (
-        df_with_tickers
-        .withColumn(
-            "ticker",
-            explode(col("matched_tickers"))
-        )
-    )
- 
-    mapping_count = news_by_ticker_df.count()
- 
-    print("\nNews by Ticker")
-    print("--------------")
  
     print(
-        "Total article-ticker mappings:",
-        mapping_count
+        "Neutral probability:",
+        round(result["neutral_probability"], 4)
     )
  
-    news_by_ticker_df.select(
-        "article_id",
-        "ticker",
-        "cleaned_headline"
-    ).show(truncate=False)
- 
- 
-    # --------------------------------------------------
-    # 9. SAVE PARQUET OUTPUTS
-    # --------------------------------------------------
- 
-    def save_parquet(dataframe, output_path):
- 
-        records = [
-            row.asDict(recursive=True)
-            for row in dataframe.collect()
-        ]
- 
-        if output_path.exists():
-            shutil.rmtree(output_path)
- 
-        output_path.mkdir(
-            parents=True,
-            exist_ok=True
-        )
- 
-        if records:
- 
-            table = pa.Table.from_pylist(records)
- 
-            pq.write_table(
-                table,
-                output_path / "part-00000.parquet"
-            )
- 
-        print("\nSaved successfully:")
-        print(output_path)
- 
- 
-    # Save article-level dataset
- 
-    save_parquet(
-        df_with_tickers,
-        NEWS_OUTPUT_PATH
+    print(
+        "Sentiment score:",
+        round(result["sentiment_score"], 4)
     )
  
- 
-    # Save article-ticker-level dataset
- 
-    save_parquet(
-        news_by_ticker_df,
-        TICKER_OUTPUT_PATH
-    )
- 
- 
-    # --------------------------------------------------
-    # 10. FINAL SUMMARY
-    # --------------------------------------------------
- 
-    print("\n================================")
-    print("TICKER EXTRACTION COMPLETED")
-    print("================================")
- 
-    print("Total articles:", total_articles)
-    print("Matched articles:", matched_articles)
-    print("Unmatched articles:", unmatched_articles)
-    print("Article-ticker mappings:", mapping_count)
- 
-    print("\nOutput folders:")
-    print("1.", NEWS_OUTPUT_PATH)
-    print("2.", TICKER_OUTPUT_PATH)
- 
- 
-finally:
- 
-    spark.stop()
-
-
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\src\extract_tickers.py
-C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\src\extract_tickers.py:52: SyntaxWarning: "\w" is an invalid escape sequence. Such sequences will not work in the future. Did you mean "\\w"? A raw string is also an option.
-  r"(?<!\w)" + re.escape(alias) + r"(?!\w)",
-WARNING: Using incubator modules: jdk.incubator.vector
-26/11/10 17:27:14 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
-Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
-Setting default log level to "WARN".
-To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
-C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\testing\utils.py:127: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
-  require_minimum_pandas_version()
-26/11/10 17:27:16 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
-
-Reading deduplicated news...
-Total unique articles: 8
-
-Loading company aliases...
-Number of companies: 13
-
-Extracting company tickers...
-                                                                                
-Ticker Extraction Results
--------------------------
-Total articles: 8
-Articles with tickers: 8
-Articles without tickers: 0
-+----------+---------------------------------------------------------------+---------------+
-|article_id|cleaned_headline                                               |matched_tickers|
-+----------+---------------------------------------------------------------+---------------+
-|NEWS-001  |Reliance Industries shares rise after strong quarterly results |[RELIANCE]     |
-|NEWS-002  |SBI shares decline amid banking sector pressure                |[SBIN]         |
-|NEWS-003  |Infosys announces expansion in artificial intelligence services|[INFY]         |
-|NEWS-004  |HDFC Bank reports steady growth in quarterly deposits          |[HDFCBANK]     |
-|NEWS-005  |Reliance and TCS attract investor attention                    |[RELIANCE, TCS]|
-|NEWS-006  |ICICI Bank announces new banking initiatives                   |[ICICIBANK]    |
-|NEWS-007  |Bharti Airtel expands its 5G network                           |[BHARTIARTL]   |
-|NEWS-008  |Tata Steel faces demand pressure                               |[TATASTEEL]    |
-+----------+---------------------------------------------------------------+---------------+
-
-                                                                                
-News by Ticker
---------------
-Total article-ticker mappings: 9
-+----------+----------+---------------------------------------------------------------+
-|article_id|ticker    |cleaned_headline                                               |
-+----------+----------+---------------------------------------------------------------+
-|NEWS-001  |RELIANCE  |Reliance Industries shares rise after strong quarterly results |
-|NEWS-002  |SBIN      |SBI shares decline amid banking sector pressure                |
-|NEWS-003  |INFY      |Infosys announces expansion in artificial intelligence services|
-|NEWS-004  |HDFCBANK  |HDFC Bank reports steady growth in quarterly deposits          |
-|NEWS-005  |RELIANCE  |Reliance and TCS attract investor attention                    |
-|NEWS-005  |TCS       |Reliance and TCS attract investor attention                    |
-|NEWS-006  |ICICIBANK |ICICI Bank announces new banking initiatives                   |
-|NEWS-007  |BHARTIARTL|Bharti Airtel expands its 5G network                           |
-|NEWS-008  |TATASTEEL |Tata Steel faces demand pressure                               |
-+----------+----------+---------------------------------------------------------------+
-
-                                                                                
-Saved successfully:
-C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\news_with_tickers
-                                                                                
-Saved successfully:
-C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\news_by_ticker
-
-================================
-TICKER EXTRACTION COMPLETED
-================================
-Total articles: 8
-Matched articles: 8
-Unmatched articles: 0
-Article-ticker mappings: 9
-
-Output folders:
-1. C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\news_with_tickers
-2. C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\news_by_ticker
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> SUCCESS: The process with PID 30060 (child process of PID 18388) has been terminated.
-SUCCESS: The process with PID 18388 (child process of PID 29780) has been terminated.
-SUCCESS: The process with PID 29780 (child process of PID 21288) has been terminated.
+print("\n" + "=" * 60)
+print("FINBERT TEST COMPLETED")
+print("=" * 60)
