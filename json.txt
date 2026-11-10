@@ -1,131 +1,85 @@
-import os
-import sys
-import json
-import re
-from pathlib import Path
-from bs4 import BeautifulSoup
- 
-# Configure Python interpreter for Spark
-os.environ["PYSPARK_PYTHON"] = sys.executable
-os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
- 
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import udf, col, concat_ws
-from pyspark.sql.types import ArrayType, StringType
- 
- 
-# Locate project files
-project_folder = Path(__file__).resolve().parents[1]
- 
-input_file = project_folder / "data" / "sample_bronze_news.json"
-alias_file = project_folder / "config" / "company_aliases.json"
- 
- 
-# Read company aliases
-with open(alias_file, "r", encoding="utf-8") as file:
-    company_aliases = json.load(file)
- 
- 
-# Prepare aliases for matching
-alias_patterns = []
- 
-for ticker, aliases in company_aliases.items():
-    for alias in aliases:
-        pattern = re.compile(
-            r"(?<!\w)" + re.escape(alias) + r"(?!\w)",
-            re.IGNORECASE
-        )
-        alias_patterns.append((ticker, alias, pattern))
- 
- 
-# Clean HTML content
-def clean_html(html_content):
- 
-    if html_content is None:
-        return ""
- 
-    soup = BeautifulSoup(html_content, "html.parser")
- 
-    return soup.get_text(separator=" ", strip=True)
- 
- 
-# Extract all matching tickers
-def extract_tickers(text):
- 
-    if not text:
-        return []
- 
-    matched_tickers = set()
- 
-    for ticker, alias, pattern in alias_patterns:
-        if pattern.search(text):
-            matched_tickers.add(ticker)
- 
-    return sorted(matched_tickers)
- 
- 
-# Start Spark
-spark = None
- 
-try:
-    spark = (
-        SparkSession.builder
-        .appName("SilverNewsTickerExtraction")
-        .master("local[*]")
-        .getOrCreate()
-    )
- 
-    # Read Bronze news
-    df = (
-        spark.read
-        .option("multiLine", "true")
-        .json(str(input_file))
-    )
- 
-    # Remove duplicate article IDs
-    df = df.dropDuplicates(["article_id"])
- 
-    # Clean article content
-    clean_html_udf = udf(clean_html, StringType())
- 
-    df = df.withColumn(
-        "cleaned_text",
-        clean_html_udf(col("body_html"))
-    )
- 
-    # Combine headline and cleaned article content
-    df = df.withColumn(
-        "search_text",
-        concat_ws(" ", col("headline"), col("cleaned_text"))
-    )
- 
-    # Register ticker extraction function
-    extract_tickers_udf = udf(
-        extract_tickers,
-        ArrayType(StringType())
-    )
- 
-    # Extract company tickers
-    result_df = df.withColumn(
-        "tickers",
-        extract_tickers_udf(col("search_text"))
-    )
- 
-    # Display results
-    print("\nNEWS WITH EXTRACTED TICKERS")
- 
-    result_df.select(
-        "article_id",
-        "headline",
-        "tickers"
-    ).show(truncate=False)
- 
-    print("\nTICKER EXTRACTION COMPLETED")
- 
-except Exception as error:
-    print("Ticker extraction error:", error)
- 
-finally:
-    if spark is not None:
-        spark.stop()
-        print("\nSpark session stopped.")
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\src\extract_tickers.py     
+
+Loaded company aliases: 5
+
+=================================================================
+TESTING COMPANY TICKER EXTRACTION
+=================================================================
+
+PASS: Reliance Industries reports strong quarterly profits
+Expected: ['RELIANCE']
+Actual:   ['RELIANCE']
+
+PASS: TCS announces new artificial intelligence services
+Expected: ['TCS']
+Actual:   ['TCS']
+
+PASS: Infosys Limited expands its business
+Expected: ['INFY']
+Actual:   ['INFY']
+
+PASS: HDFC Bank reports deposit growth
+Expected: ['HDFCBANK']
+Actual:   ['HDFCBANK']
+
+FAIL: ICICI Bank announces quarterly results
+Expected: ['ICICIBANK']
+Actual:   []
+
+FAIL: Tata Steel faces demand pressure
+Expected: ['TATASTEEL']
+Actual:   []
+
+FAIL: State Bank of India reports higher profits
+Expected: ['SBIN']
+Actual:   []
+
+FAIL: ITC Limited announces business expansion
+Expected: ['ITC']
+Actual:   []
+
+FAIL: Sun Pharma reports strong earnings
+Expected: ['SUNPHARMA']
+Actual:   []
+
+FAIL: Bharti Airtel expands its 5G network
+Expected: ['BHARTIARTL']
+Actual:   []
+
+FAIL: Adani Enterprises announces a new project
+Expected: ['ADANIENT']
+Actual:   []
+
+FAIL: Coal India increases production
+Expected: ['COALINDIA']
+Actual:   []
+
+FAIL: Bajaj Finance reports loan growth
+Expected: ['BAJFINANCE']
+Actual:   []
+
+PASS: Reliance Industries and TCS attract investors
+Expected: ['RELIANCE', 'TCS']
+Actual:   ['RELIANCE', 'TCS']
+
+=================================================================
+TEST SUMMARY
+=================================================================
+Total tests: 14
+Passed: 5
+Failed: 9
+
+TESTING UNRELATED NEWS HEADLINES
+
+Headline: The company reported excellent business growth
+Extracted tickers: []
+
+Headline: The market outlook remains positive
+Extracted tickers: []
+
+Headline: Artificial intelligence is transforming banking
+Extracted tickers: []
+
+Some ticker tests failed.
+Please check company_aliases.json before proceeding.
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> 
