@@ -1,26 +1,3 @@
-========== STARTING NEWS VALIDATION ==========
-WARNING: Using incubator modules: jdk.incubator.vector
-26/11/10 22:43:05 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
-Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
-Setting default log level to "WARN".
-To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
-C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\testing\utils.py:127: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
-  require_minimum_pandas_version()
-26/11/10 22:43:07 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
-Total Bronze records: 8
-Saved 8 records to: C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\valid_news\part-00000.parquet
-Saved 0 records to: C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\dead_letter\part-00000.parquet
+python -c "import json; records = [{'article_id':'TEST-001','headline':'Reliance reports profits','full_text':'Strong results','url':'https://example.com/1'}, {'article_id':'','headline':'SBI shares decline','full_text':'Shares declined','url':'https://example.com/2'}, {'article_id':'TEST-003','headline':'Infosys expands','full_text':'Expansion news','url':''}, {'article_id':'TEST-004','headline':'','full_text':'','url':'https://example.com/4'}]; print(json.dumps(records, indent=2))"
 
-========== VALIDATION SUMMARY ==========
-Total records  : 8
-Valid records  : 8
-Invalid records: 0
-
-========== DEAD-LETTER REASONS ==========
-
-Dead-letter handling completed successfully!
-
-Spark session stopped.
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> SUCCESS: The process with PID 25188 (child process of PID 14868) has been terminated.
-SUCCESS: The process with PID 14868 (child process of PID 22848) has been terminated.
-SUCCESS: The process with PID 22848 (child process of PID 8712) has been terminated.
+python -c "import json; records = [{'article_id':'TEST-001','headline':'Reliance reports profits','full_text':'Strong results','url':'https://example.com/1'}, {'article_id':'','headline':'SBI shares decline','full_text':'Shares declined','url':'https://example.com/2'}, {'article_id':'TEST-003','headline':'Infosys expands','full_text':'Expansion news','url':''}, {'article_id':'TEST-004','headline':'','full_text':'','url':'https://example.com/4'}]; print(json.dumps(records, indent=2))"
