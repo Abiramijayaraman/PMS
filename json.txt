@@ -1,20 +1,333 @@
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\src\extract_tickers.py 
+
+
+import os
+import sys
+import json
+import re
+import shutil
+from pathlib import Path
+ 
+import pyarrow as pa
+import pyarrow.parquet as pq
+ 
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import (
+    col,
+    lit,
+    when,
+    array,
+    filter as array_filter,
+    explode,
+    size
+)
+ 
+ 
+# --------------------------------------------------
+# 1. PROJECT PATHS
+# --------------------------------------------------
+ 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+ 
+INPUT_PATH = (
+    PROJECT_ROOT / "silver_news" / "data"
+    / "processed" / "deduplicated_news"
+)
+ 
+ALIAS_PATH = (
+    PROJECT_ROOT / "silver_news" / "config"
+    / "company_aliases.json"
+)
+ 
+NEWS_OUTPUT_PATH = (
+    PROJECT_ROOT / "silver_news" / "data"
+    / "processed" / "news_with_tickers"
+)
+ 
+TICKER_OUTPUT_PATH = (
+    PROJECT_ROOT / "silver_news" / "data"
+    / "processed" / "news_by_ticker"
+)
+ 
+ 
+# --------------------------------------------------
+# 2. CONFIGURE PYTHON FOR SPARK
+# --------------------------------------------------
+ 
+os.environ["PYSPARK_PYTHON"] = sys.executable
+os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
+ 
+ 
+# --------------------------------------------------
+# 3. CREATE SPARK SESSION
+# --------------------------------------------------
+ 
+spark = (
+    SparkSession.builder
+    .appName("SilverNewsTickerExtraction")
+    .master("local[*]")
+    .getOrCreate()
+)
+ 
+spark.sparkContext.setLogLevel("ERROR")
+ 
+ 
+try:
+ 
+    # --------------------------------------------------
+    # 4. READ DEDUPLICATED NEWS
+    # --------------------------------------------------
+ 
+    print("\nReading deduplicated news...")
+ 
+    if not INPUT_PATH.exists():
+        raise FileNotFoundError(
+            f"Input path not found: {INPUT_PATH}"
+        )
+ 
+    table = pq.read_table(INPUT_PATH)
+ 
+    records = table.to_pylist()
+ 
+    print("Total unique articles:", len(records))
+ 
+    if not records:
+        raise ValueError(
+            "No deduplicated news records found."
+        )
+ 
+    df = spark.createDataFrame(records)
+ 
+ 
+    # --------------------------------------------------
+    # 5. LOAD COMPANY ALIASES
+    # --------------------------------------------------
+ 
+    print("\nLoading company aliases...")
+ 
+    if not ALIAS_PATH.exists():
+        raise FileNotFoundError(
+            f"Alias file not found: {ALIAS_PATH}"
+        )
+ 
+    with open(
+        ALIAS_PATH,
+        "r",
+        encoding="utf-8"
+    ) as file:
+ 
+        company_aliases = json.load(file)
+ 
+    print(
+        "Number of companies:",
+        len(company_aliases)
+    )
+ 
+ 
+    # --------------------------------------------------
+    # 6. EXTRACT TICKERS
+    # --------------------------------------------------
+ 
+    print("\nExtracting company tickers...")
+ 
+    analysis_text = col("text_for_analysis")
+ 
+    ticker_conditions = []
+ 
+    for ticker, aliases in company_aliases.items():
+ 
+        patterns = []
+ 
+        for alias in aliases:
+ 
+            escaped_alias = re.escape(alias)
+ 
+            pattern = (
+                r"(?i)(^|[^A-Za-z0-9])"
+                + escaped_alias
+                + r"([^A-Za-z0-9]|$)"
+            )
+ 
+            patterns.append(pattern)
+ 
+        combined_pattern = "|".join(patterns)
+ 
+        condition = analysis_text.rlike(
+            combined_pattern
+        )
+ 
+        ticker_conditions.append(
+            when(condition, lit(ticker))
+        )
+ 
+ 
+    # Create an array containing only matched tickers.
+ 
+    df_with_tickers = df.withColumn(
+        "matched_tickers",
+        array_filter(
+            array(*ticker_conditions),
+            lambda ticker: ticker.isNotNull()
+        )
+    )
+ 
+ 
+    # --------------------------------------------------
+    # 7. DISPLAY EXTRACTION RESULTS
+    # --------------------------------------------------
+ 
+    total_articles = df_with_tickers.count()
+ 
+    matched_articles = (
+        df_with_tickers
+        .filter(size(col("matched_tickers")) > 0)
+        .count()
+    )
+ 
+    unmatched_articles = (
+        total_articles - matched_articles
+    )
+ 
+    print("\nTicker Extraction Results")
+    print("-------------------------")
+ 
+    print("Total articles:", total_articles)
+ 
+    print(
+        "Articles with tickers:",
+        matched_articles
+    )
+ 
+    print(
+        "Articles without tickers:",
+        unmatched_articles
+    )
+ 
+    df_with_tickers.select(
+        "article_id",
+        "cleaned_headline",
+        "matched_tickers"
+    ).show(truncate=False)
+ 
+ 
+    # --------------------------------------------------
+    # 8. CREATE NEWS BY TICKER
+    # --------------------------------------------------
+ 
+    news_by_ticker_df = (
+        df_with_tickers
+        .withColumn(
+            "ticker",
+            explode(col("matched_tickers"))
+        )
+    )
+ 
+    mapping_count = news_by_ticker_df.count()
+ 
+    print("\nNews by Ticker")
+    print("--------------")
+ 
+    print(
+        "Total article-ticker mappings:",
+        mapping_count
+    )
+ 
+    news_by_ticker_df.select(
+        "article_id",
+        "ticker",
+        "cleaned_headline"
+    ).show(truncate=False)
+ 
+ 
+    # --------------------------------------------------
+    # 9. SAVE PARQUET OUTPUTS
+    # --------------------------------------------------
+ 
+    def save_parquet(dataframe, output_path):
+ 
+        records = [
+            row.asDict(recursive=True)
+            for row in dataframe.collect()
+        ]
+ 
+        if output_path.exists():
+            shutil.rmtree(output_path)
+ 
+        output_path.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+ 
+        if records:
+ 
+            table = pa.Table.from_pylist(records)
+ 
+            pq.write_table(
+                table,
+                output_path / "part-00000.parquet"
+            )
+ 
+        print("\nSaved successfully:")
+        print(output_path)
+ 
+ 
+    # Save article-level dataset
+ 
+    save_parquet(
+        df_with_tickers,
+        NEWS_OUTPUT_PATH
+    )
+ 
+ 
+    # Save article-ticker-level dataset
+ 
+    save_parquet(
+        news_by_ticker_df,
+        TICKER_OUTPUT_PATH
+    )
+ 
+ 
+    # --------------------------------------------------
+    # 10. FINAL SUMMARY
+    # --------------------------------------------------
+ 
+    print("\n================================")
+    print("TICKER EXTRACTION COMPLETED")
+    print("================================")
+ 
+    print("Total articles:", total_articles)
+    print("Matched articles:", matched_articles)
+    print("Unmatched articles:", unmatched_articles)
+    print("Article-ticker mappings:", mapping_count)
+ 
+    print("\nOutput folders:")
+    print("1.", NEWS_OUTPUT_PATH)
+    print("2.", TICKER_OUTPUT_PATH)
+ 
+ 
+finally:
+ 
+    spark.stop()
+
+
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\src\extract_tickers.py
 C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\src\extract_tickers.py:52: SyntaxWarning: "\w" is an invalid escape sequence. Such sequences will not work in the future. Did you mean "\\w"? A raw string is also an option.
   r"(?<!\w)" + re.escape(alias) + r"(?!\w)",
 WARNING: Using incubator modules: jdk.incubator.vector
-26/11/10 17:08:35 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
+26/11/10 17:27:14 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
 Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
 Setting default log level to "WARN".
 To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
 C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\testing\utils.py:127: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
   require_minimum_pandas_version()
-26/11/10 17:08:36 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+26/11/10 17:27:16 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
 
 Reading deduplicated news...
 Total unique articles: 8
 
 Loading company aliases...
 Number of companies: 13
+
+Extracting company tickers...
                                                                                 
 Ticker Extraction Results
 -------------------------
@@ -34,8 +347,10 @@ Articles without tickers: 0
 |NEWS-008  |Tata Steel faces demand pressure                               |[TATASTEEL]    |
 +----------+---------------------------------------------------------------+---------------+
 
-
-News by Ticker:
+                                                                                
+News by Ticker
+--------------
+Total article-ticker mappings: 9
 +----------+----------+---------------------------------------------------------------+
 |article_id|ticker    |cleaned_headline                                               |
 +----------+----------+---------------------------------------------------------------+
@@ -50,12 +365,24 @@ News by Ticker:
 |NEWS-008  |TATASTEEL |Tata Steel faces demand pressure                               |
 +----------+----------+---------------------------------------------------------------+
 
-Saved: C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\news_with_tickers
-Saved: C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\news_by_ticker
+                                                                                
+Saved successfully:
+C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\news_with_tickers
+                                                                                
+Saved successfully:
+C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\news_by_ticker
 
-Ticker extraction completed successfully!
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> SUCCESS: The process with PID 25948 (child process of PID 26184) has been terminated.
-SUCCESS: The process with PID 26184 (child process of PID 16960) has been terminated.
-SUCCESS: The process with PID 16960 (child process of PID 22004) has been terminated.
+================================
+TICKER EXTRACTION COMPLETED
+================================
+Total articles: 8
+Matched articles: 8
+Unmatched articles: 0
+Article-ticker mappings: 9
 
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> 
+Output folders:
+1. C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\news_with_tickers
+2. C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\news_by_ticker
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> SUCCESS: The process with PID 30060 (child process of PID 18388) has been terminated.
+SUCCESS: The process with PID 18388 (child process of PID 29780) has been terminated.
+SUCCESS: The process with PID 29780 (child process of PID 21288) has been terminated.
