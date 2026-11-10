@@ -1,12 +1,12 @@
 (venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\src\create_sample_bronze.py
 WARNING: Using incubator modules: jdk.incubator.vector
-26/11/10 14:58:31 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
+26/11/10 15:05:47 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
 Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
 Setting default log level to "WARN".
 To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
 C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\testing\utils.py:127: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
   require_minimum_pandas_version()
-26/11/10 14:58:33 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+26/11/10 15:05:50 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
 
 SIMULATED BRONZE SCHEMA
 root
@@ -33,7 +33,7 @@ SIMULATED BRONZE RECORDS
 +---------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------+---------+------+-------------------+
 
 
-Error creating simulated Bronze data: An error occurred while calling o44.parquet.
+Error creating simulated Bronze data: An error occurred while calling o46.parquet.
 : java.lang.RuntimeException: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
         at org.apache.hadoop.util.Shell.getWinUtilsPath(Shell.java:790)
         at org.apache.hadoop.util.Shell.getSetPermissionCommand(Shell.java:299)
@@ -46,9 +46,6 @@ Error creating simulated Bronze data: An error occurred while calling o44.parque
         at org.apache.hadoop.fs.RawLocalFileSystem.mkdirs(RawLocalFileSystem.java:873)
         at org.apache.hadoop.fs.RawLocalFileSystem.mkdirsWithOptionalPermission(RawLocalFileSystem.java:900)
         at org.apache.hadoop.fs.RawLocalFileSystem.mkdirs(RawLocalFileSystem.java:873)
-        at org.apache.hadoop.fs.RawLocalFileSystem.mkdirsWithOptionalPermission(RawLocalFileSystem.java:900)
-        at org.apache.hadoop.fs.RawLocalFileSystem.mkdirs(RawLocalFileSystem.java:873)
-        at org.apache.hadoop.fs.ChecksumFileSystem.mkdirs(ChecksumFileSystem.java:1047)
         at org.apache.hadoop.mapreduce.lib.output.FileOutputCommitter.setupJob(FileOutputCommitter.java:361)
         at org.apache.spark.internal.io.HadoopMapReduceCommitProtocol.setupJob(HadoopMapReduceCommitProtocol.scala:186)
         at org.apache.spark.sql.execution.datasources.FileFormatWriter$.write(FileFormatWriter.scala:168)
@@ -151,7 +148,7 @@ Caused by: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are un
 
 Spark session stopped.
 Traceback (most recent call last):
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\src\create_sample_bronze.py", line 203, in <module>
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\src\create_sample_bronze.py", line 208, in <module>
     .parquet(str(output_path))
      ~~~~~~~^^^^^^^^^^^^^^^^^^
   File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\sql\readwriter.py", line 2099, in parquet
@@ -166,7 +163,7 @@ Traceback (most recent call last):
     raise Py4JJavaError(
         "An error occurred while calling {0}{1}{2}.\n".
         format(target_id, ".", name), value)
-py4j.protocol.Py4JJavaError: An error occurred while calling o44.parquet.
+py4j.protocol.Py4JJavaError: An error occurred while calling o46.parquet.
 : java.lang.RuntimeException: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
         at org.apache.hadoop.util.Shell.getWinUtilsPath(Shell.java:790)
         at org.apache.hadoop.util.Shell.getSetPermissionCommand(Shell.java:299)
@@ -179,9 +176,6 @@ py4j.protocol.Py4JJavaError: An error occurred while calling o44.parquet.
         at org.apache.hadoop.fs.RawLocalFileSystem.mkdirs(RawLocalFileSystem.java:873)
         at org.apache.hadoop.fs.RawLocalFileSystem.mkdirsWithOptionalPermission(RawLocalFileSystem.java:900)
         at org.apache.hadoop.fs.RawLocalFileSystem.mkdirs(RawLocalFileSystem.java:873)
-        at org.apache.hadoop.fs.RawLocalFileSystem.mkdirsWithOptionalPermission(RawLocalFileSystem.java:900)
-        at org.apache.hadoop.fs.RawLocalFileSystem.mkdirs(RawLocalFileSystem.java:873)
-        at org.apache.hadoop.fs.ChecksumFileSystem.mkdirs(ChecksumFileSystem.java:1047)
         at org.apache.hadoop.mapreduce.lib.output.FileOutputCommitter.setupJob(FileOutputCommitter.java:361)
         at org.apache.spark.internal.io.HadoopMapReduceCommitProtocol.setupJob(HadoopMapReduceCommitProtocol.scala:186)
         at org.apache.spark.sql.execution.datasources.FileFormatWriter$.write(FileFormatWriter.scala:168)
@@ -281,6 +275,6 @@ Caused by: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are un
         at org.apache.hadoop.util.Shell.<clinit>(Shell.java:570)
         ... 27 more
 
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> SUCCESS: The process with PID 22108 (child process of PID 8988) has been terminated.
-SUCCESS: The process with PID 8988 (child process of PID 28196) has been terminated.
-SUCCESS: The process with PID 28196 (child process of PID 24744) has been terminated.
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> SUCCESS: The process with PID 7504 (child process of PID 28940) has been terminated.
+SUCCESS: The process with PID 28940 (child process of PID 4476) has been terminated.
+SUCCESS: The process with PID 4476 (child process of PID 16836) has been terminated.
