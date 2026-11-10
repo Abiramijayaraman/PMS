@@ -1,81 +1,13 @@
-'''import os
-import sys
-from pathlib import Path
- 
-os.environ["PYSPARK_PYTHON"] = sys.executable
-os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
- 
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, trim
- 
-project_folder = Path(__file__).resolve().parents[1]
-input_file = project_folder / "data" / "sample_bronze_news.json"
- 
-spark = None
- 
-try:
-    spark = (
-        SparkSession.builder
-        .appName("SilverNewsValidation")
-        .master("local[*]")
-        .getOrCreate()
-    )
- 
-    # Read Bronze news
-    df = (
-        spark.read
-        .option("multiLine", "true")
-        .json(str(input_file))
-    )
- 
-    # Define required fields
-    required_columns = [
-        "article_id",
-        "headline",
-        "body_html",
-        "published_at"
-    ]
- 
-    # Check for missing or empty values
-    valid_condition = None
- 
-    for column_name in required_columns:
-        condition = (
-            col(column_name).isNotNull()
-            & (trim(col(column_name)) != "")
-        )
- 
-        if valid_condition is None:
-            valid_condition = condition
-        else:
-            valid_condition = valid_condition & condition
- 
-    # Separate valid and invalid records
-    valid_df = df.filter(valid_condition)
-    invalid_df = df.filter(~valid_condition)
- 
-    print("\nVALID NEWS RECORDS")
-    valid_df.show(truncate=False)
- 
-    print("\nINVALID NEWS RECORDS")
-    invalid_df.show(truncate=False)
- 
-    print("\nTOTAL RECORDS:", df.count())
-    print("VALID RECORDS:", valid_df.count())
-    print("INVALID RECORDS:", invalid_df.count())
- 
-except Exception as error:
-    print("Validation error:", error)
- 
-finally:
-    if spark is not None:
-        spark.stop()
-        print("\nSpark session stopped.")'''
 
-
+import os
 import sys
+import json
 from pathlib import Path
- 
+from datetime import datetime, timezone
+
+import pyarrow as pa
+import pyarrow.parquet as pq
+
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     col,
@@ -87,16 +19,14 @@ from pyspark.sql.functions import (
     concat_ws,
 )
 from pyspark.sql.types import StructType, StructField, StringType
- 
-import pyarrow.parquet as pq
- 
- 
+
+
 # --------------------------------------------------
-# 1. Project paths
+# 1. PROJECT PATHS
 # --------------------------------------------------
- 
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
- 
+
 BRONZE_PATH = (
     PROJECT_ROOT
     / "silver_news"
@@ -104,216 +34,287 @@ BRONZE_PATH = (
     / "simulated_bronze"
     / "news"
 )
- 
- 
-# --------------------------------------------------
-# 2. Configure Python for Spark
-# --------------------------------------------------
- 
-python_executable = sys.executable
- 
-import os
-os.environ["PYSPARK_PYTHON"] = python_executable
-os.environ["PYSPARK_DRIVER_PYTHON"] = python_executable
- 
- 
-# --------------------------------------------------
-# 3. Create Spark session
-# --------------------------------------------------
- 
-spark = (
-    SparkSession.builder
-    .appName("SilverNewsValidation")
-    .master("local[*]")
-    .getOrCreate()
+
+OUTPUT_PATH = (
+    PROJECT_ROOT
+    / "silver_news"
+    / "data"
+    / "processed"
 )
- 
-spark.sparkContext.setLogLevel("ERROR")
- 
- 
+
+VALID_PATH = OUTPUT_PATH / "valid_news"
+DEAD_LETTER_PATH = OUTPUT_PATH / "dead_letter"
+
+
 # --------------------------------------------------
-# 4. Read Bronze Parquet using PyArrow
+# 2. CONFIGURE PYTHON FOR SPARK
 # --------------------------------------------------
- 
-print("\n========== READING BRONZE DATA ==========")
- 
-if not BRONZE_PATH.exists():
-    raise FileNotFoundError(
-        f"Bronze Parquet folder not found: {BRONZE_PATH}"
-    )
- 
-table = pq.read_table(str(BRONZE_PATH))
-bronze_records = table.to_pylist()
- 
-print(f"Total Bronze records: {len(bronze_records)}")
- 
- 
-# We only need raw_json for this validation step.
-# This also avoids timestamp conversion issues on Windows.
- 
-raw_records = [
-    {"raw_json": record.get("raw_json")}
-    for record in bronze_records
-]
- 
-bronze_df = spark.createDataFrame(raw_records)
- 
-print("\nBronze input records:")
-bronze_df.show(truncate=False)
- 
- 
+
+os.environ["PYSPARK_PYTHON"] = sys.executable
+os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
+
+
 # --------------------------------------------------
-# 5. Define the producer's JSON schema
+# 3. BRONZE JSON SCHEMA
 # --------------------------------------------------
- 
+
 article_schema = StructType([
     StructField("article_id", StringType(), True),
     StructField("published_at", StringType(), True),
     StructField("source", StringType(), True),
     StructField("headline", StringType(), True),
     StructField("full_text", StringType(), True),
-    StructField("body_html", StringType(), True),  # Legacy sample support
+    StructField("body_html", StringType(), True),
     StructField("url", StringType(), True),
     StructField("ingested_at", StringType(), True),
 ])
- 
- 
+
+
 # --------------------------------------------------
-# 6. Parse raw JSON
+# 4. HELPER: SAVE PARQUET SAFELY
 # --------------------------------------------------
- 
-print("\n========== PARSING NEWS JSON ==========")
- 
-parsed_df = bronze_df.withColumn(
-    "article",
-    from_json(col("raw_json"), article_schema)
-)
- 
-news_df = parsed_df.select(
-    col("article.article_id").alias("article_id"),
-    col("article.published_at").alias("published_at"),
-    col("article.source").alias("source"),
-    col("article.headline").alias("headline"),
-    coalesce(
-        col("article.full_text"),
-        col("article.body_html")
-    ).alias("full_text"),
-    col("article.url").alias("url"),
-    col("article.ingested_at").alias("ingested_at"),
-    col("article").isNull().alias("json_parse_failed"),
-)
- 
- 
+
+def save_parquet(records, output_path):
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    file_path = output_path / "part-00000.parquet"
+
+    if records:
+        table = pa.Table.from_pylist(records)
+    else:
+        # Keep a predictable schema even when no records exist.
+        table = pa.table({
+            "article_id": pa.array([], type=pa.string()),
+            "raw_json": pa.array([], type=pa.string()),
+            "url": pa.array([], type=pa.string()),
+            "headline": pa.array([], type=pa.string()),
+            "full_text": pa.array([], type=pa.string()),
+            "published_at": pa.array([], type=pa.string()),
+            "source": pa.array([], type=pa.string()),
+            "ingested_at": pa.array([], type=pa.string()),
+            "validation_status": pa.array([], type=pa.string()),
+            "validation_reason": pa.array([], type=pa.string()),
+            "rejected_at": pa.array([], type=pa.string()),
+        })
+
+    pq.write_table(table, file_path)
+
+    print(f"Saved {len(records)} records to: {file_path}")
+
+
 # --------------------------------------------------
-# 7. Validate required fields
+# 5. MAIN VALIDATION PIPELINE
 # --------------------------------------------------
- 
-print("\n========== VALIDATING NEWS ==========")
- 
-# Required fields:
-# 1. article_id
-# 2. url
-#
-# At least one usable text field is required for
-# downstream sentiment analysis:
-# headline OR full_text.
-#
-# published_at and source are optional.
- 
-has_article_id = (
-    col("article_id").isNotNull()
-    & (trim(col("article_id")) != "")
-)
- 
-has_url = (
-    col("url").isNotNull()
-    & (trim(col("url")) != "")
-)
- 
-has_headline = (
-    col("headline").isNotNull()
-    & (trim(col("headline")) != "")
-)
- 
-has_full_text = (
-    col("full_text").isNotNull()
-    & (trim(col("full_text")) != "")
-)
- 
-has_content = has_headline | has_full_text
- 
- 
-# Build a reason for every invalid record.
-validation_reason = concat_ws(
-    "; ",
-    when(col("json_parse_failed"), lit("invalid_json")),
-    when(~has_article_id, lit("missing_article_id")),
-    when(~has_url, lit("missing_url")),
-    when(~has_content, lit("missing_headline_and_full_text")),
-)
- 
-validated_df = news_df.withColumn(
-    "validation_reason",
-    validation_reason
-).withColumn(
-    "validation_status",
-    when(col("validation_reason") == "", "VALID")
-    .otherwise("INVALID")
-)
- 
- 
-# --------------------------------------------------
-# 8. Separate valid and invalid records
-# --------------------------------------------------
- 
-valid_news_df = validated_df.filter(
-    col("validation_status") == "VALID"
-)
- 
-invalid_news_df = validated_df.filter(
-    col("validation_status") == "INVALID"
-)
- 
- 
-# --------------------------------------------------
-# 9. Display validation results
-# --------------------------------------------------
- 
-total_count = validated_df.count()
-valid_count = valid_news_df.count()
-invalid_count = invalid_news_df.count()
- 
-print("\n========== VALIDATION SUMMARY ==========")
- 
-print(f"Total records  : {total_count}")
-print(f"Valid records  : {valid_count}")
-print(f"Invalid records: {invalid_count}")
- 
- 
-print("\n========== VALID NEWS ==========")
- 
-valid_news_df.select(
-    "article_id",
-    "headline",
-    "published_at",
-    "validation_status"
-).show(truncate=False)
- 
- 
-print("\n========== INVALID NEWS / DEAD-LETTER CANDIDATES ==========")
- 
-invalid_news_df.select(
-    "article_id",
-    "url",
-    "validation_reason",
-    "validation_status"
-).show(truncate=False)
- 
- 
-# --------------------------------------------------
-# 10. Stop Spark
-# --------------------------------------------------
- 
-spark.stop()
- 
-print("\nNews validation completed successfully!")
+
+spark = None
+
+try:
+    print("\n========== STARTING NEWS VALIDATION ==========")
+
+    if not BRONZE_PATH.exists():
+        raise FileNotFoundError(
+            f"Bronze folder not found: {BRONZE_PATH}"
+        )
+
+    spark = (
+        SparkSession.builder
+        .appName("SilverNewsDeadLetterHandling")
+        .master("local[*]")
+        .getOrCreate()
+    )
+
+    spark.sparkContext.setLogLevel("ERROR")
+
+    # Read Bronze Parquet.
+    bronze_table = pq.read_table(str(BRONZE_PATH))
+    bronze_records = bronze_table.to_pylist()
+
+    print(f"Total Bronze records: {len(bronze_records)}")
+
+    # Preserve the complete original Bronze record.
+    # Only raw_json is parsed for article validation.
+    input_records = []
+
+    for record in bronze_records:
+        raw_json = record.get("raw_json")
+
+        if isinstance(raw_json, bytes):
+            raw_json = raw_json.decode("utf-8", errors="replace")
+
+        input_records.append({
+            "raw_json": raw_json,
+            "bronze_record": record
+        })
+
+    # Create Spark DataFrame.
+    bronze_df = spark.createDataFrame([
+        {"raw_json": item["raw_json"]}
+        for item in input_records
+    ])
+
+    # Parse JSON.
+    parsed_df = bronze_df.withColumn(
+        "article",
+        from_json(col("raw_json"), article_schema)
+    )
+
+    news_df = parsed_df.select(
+        col("raw_json"),
+        col("article.article_id").alias("article_id"),
+        col("article.published_at").alias("published_at"),
+        col("article.source").alias("source"),
+        col("article.headline").alias("headline"),
+        coalesce(
+            col("article.full_text"),
+            col("article.body_html")
+        ).alias("full_text"),
+        col("article.url").alias("url"),
+        col("article.ingested_at").alias("ingested_at"),
+        col("article").isNull().alias("json_parse_failed"),
+    )
+
+    # Required field checks.
+    has_article_id = (
+        col("article_id").isNotNull()
+        & (trim(col("article_id")) != "")
+    )
+
+    has_url = (
+        col("url").isNotNull()
+        & (trim(col("url")) != "")
+    )
+
+    has_headline = (
+        col("headline").isNotNull()
+        & (trim(col("headline")) != "")
+    )
+
+    has_full_text = (
+        col("full_text").isNotNull()
+        & (trim(col("full_text")) != "")
+    )
+
+    has_content = has_headline | has_full_text
+
+    # Generate rejection reasons.
+    validation_reason = concat_ws(
+        "; ",
+        when(
+            col("json_parse_failed"),
+            lit("invalid_json")
+        ),
+        when(
+            ~has_article_id,
+            lit("missing_article_id")
+        ),
+        when(
+            ~has_url,
+            lit("missing_url")
+        ),
+        when(
+            ~has_content,
+            lit("missing_headline_and_full_text")
+        ),
+    )
+
+    validated_df = (
+        news_df
+        .withColumn(
+            "validation_reason",
+            validation_reason
+        )
+        .withColumn(
+            "validation_status",
+            when(
+                col("validation_reason") == "",
+                lit("VALID")
+            ).otherwise(lit("INVALID"))
+        )
+    )
+
+    # Separate valid and invalid records.
+    valid_df = validated_df.filter(
+        col("validation_status") == "VALID"
+    )
+
+    invalid_df = validated_df.filter(
+        col("validation_status") == "INVALID"
+    )
+
+    valid_rows = valid_df.collect()
+    invalid_rows = invalid_df.collect()
+
+    # Preserve original Bronze metadata by row position.
+    # Spark DataFrame transformations above retain input row order
+    # in this local single-batch implementation.
+    # For production, use a stable record identifier instead.
+    all_rows = validated_df.collect()
+
+    valid_records = []
+    dead_letter_records = []
+
+    rejected_at = datetime.now(timezone.utc).isoformat()
+
+    for index, row in enumerate(all_rows):
+        original = input_records[index]["bronze_record"]
+
+        output_record = {
+            "article_id": row["article_id"],
+            "raw_json": row["raw_json"],
+            "url": row["url"],
+            "headline": row["headline"],
+            "full_text": row["full_text"],
+            "published_at": row["published_at"],
+            "source": row["source"],
+            "ingested_at": row["ingested_at"],
+            "validation_status": row["validation_status"],
+            "validation_reason": row["validation_reason"],
+            "rejected_at": (
+                rejected_at
+                if row["validation_status"] == "INVALID"
+                else None
+            ),
+        }
+
+        if row["validation_status"] == "VALID":
+            valid_records.append(output_record)
+        else:
+            output_record["bronze_metadata"] = json.dumps(
+                {
+                    key: str(value) if value is not None else None
+                    for key, value in original.items()
+                },
+                ensure_ascii=False
+            )
+
+            dead_letter_records.append(output_record)
+
+    # Save both outputs.
+    save_parquet(valid_records, VALID_PATH)
+    save_parquet(dead_letter_records, DEAD_LETTER_PATH)
+
+    # Display summary.
+    print("\n========== VALIDATION SUMMARY ==========")
+
+    print(f"Total records  : {len(all_rows)}")
+    print(f"Valid records  : {len(valid_records)}")
+    print(f"Invalid records: {len(dead_letter_records)}")
+
+    print("\n========== DEAD-LETTER REASONS ==========")
+
+    for record in dead_letter_records:
+        print(
+            f"Article ID: {record['article_id']} | "
+            f"Reason: {record['validation_reason']}"
+        )
+
+    print("\nDead-letter handling completed successfully!")
+
+except Exception as error:
+    print("\nValidation pipeline failed:", error)
+    raise
+
+finally:
+    if spark is not None:
+        spark.stop()
+        print("\nSpark session stopped.")
