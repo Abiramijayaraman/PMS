@@ -1,12 +1,12 @@
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\src\read_bronze.py         
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\src\read_bronze.py
 WARNING: Using incubator modules: jdk.incubator.vector
-26/11/10 15:38:52 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
+26/11/10 15:42:29 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
 Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
 Setting default log level to "WARN".
 To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
 C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\testing\utils.py:127: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
   require_minimum_pandas_version()
-26/11/10 15:38:55 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+26/11/10 15:42:32 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
 
 ========== READING BRONZE PARQUET ==========
 
@@ -123,7 +123,7 @@ An error occurred while calling o29.parquet.
 
 SPARK SESSION STOPPED
 Traceback (most recent call last):
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\src\read_bronze.py", line 79, in <module>
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\src\read_bronze.py", line 80, in <module>
     bronze_df = spark.read.parquet(str(BRONZE_PATH))
   File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\sql\readwriter.py", line 699, in parquet
     return self._df(self._jreader.parquet(_to_seq(self._spark._sc, paths)))
@@ -246,6 +246,6 @@ py4j.protocol.Py4JJavaError: An error occurred while calling o29.parquet.
         at py4j.ClientServerConnection.run(ClientServerConnection.java:108)
         at java.base/java.lang.Thread.run(Thread.java:840)
 
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> SUCCESS: The process with PID 27764 (child process of PID 21408) has been terminated.
-SUCCESS: The process with PID 21408 (child process of PID 14884) has been terminated.
-SUCCESS: The process with PID 14884 (child process of PID 29920) has been terminated.
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> SUCCESS: The process with PID 19480 (child process of PID 28688) has been terminated.
+SUCCESS: The process with PID 28688 (child process of PID 17932) has been terminated.
+SUCCESS: The process with PID 17932 (child process of PID 18312) has been terminated.
