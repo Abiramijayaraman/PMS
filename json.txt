@@ -1,99 +1,131 @@
->> .\venv\Scripts\Activate.ps1    
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> $env:HF_HUB_DISABLE_XET = "1"
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\src\sentiment_analysis.py                                                                                   
-Loading FinBERT model...          
-Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-Traceback (most recent call last):
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\huggingface_hub\utils\_http.py", line 866, in hf_raise_for_status
-    response.raise_for_status()
-    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\httpx2\_models.py", line 828, in raise_for_status
-    raise HTTPStatusError(message, request=request, response=self)
-httpx2.HTTPStatusError: Server error '503 Service Unavailable' for url 'https://us.aws.cdn.hf.co/xet-bridge-us/621ffdc036468d709f176f71/97c9cb12d04352c17ea4a86542c6411d19940e4418e13199087eba3230f3c144?user_id=public&response-content-disposition=inline%3B+filename*%3DUTF-8%27%27model.safetensors%3B+filename%3D%22model.safetensors%22%3B&xip=0EN7IJuHjdU&X-Xet-Cas-Uid=public&Expires=1794286670&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly91cy5hd3MuY2RuLmhmLmNvL3hldC1icmlkZ2UtdXMvNjIxZmZkYzAzNjQ2OGQ3MDlmMTc2ZjcxLzk3YzljYjEyZDA0MzUyYzE3ZWE0YTg2NTQyYzY0MTFkMTk5NDBlNDQxOGUxMzE5OTA4N2ViYTMyMzBmM2MxNDRcXD91c2VyX2lkPXB1YmxpYyZyZXNwb25zZS1jb250ZW50LWRpc3Bvc2l0aW9uPWlubGluZSUzQitmaWxlbmFtZSUyQSUzRFVURi04JTI3JTI3bW9kZWwuc2FmZXRlbnNvcnMlM0IrZmlsZW5hbWUlM0QlMjJtb2RlbC5zYWZldGVuc29ycyUyMiUzQiZ4aXA9MEVON0lKdUhqZFUmWC1YZXQtQ2FzLVVpZD1wdWJsaWMiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkVwb2NoVGltZSI6MTc5NDI4NjY3MH19fV19&Signature=MEQCIDYyLa52MBlNDdvFFbNc2qLMC8bCmt8k4shIJl-N3M3PAiBP93dJZ6aqy45Byiwb-Tb3u6P9wBLV9K9idgHnqhLGSA__&Key-Pair-Id=01KXEF4KZ1B6FV465MAWR4M21F&Hash-Algorithm=SHA256'
-For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/503
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\transformers\utils\hub.py", line 537, in cached_files
-    hf_hub_download(
-    ~~~~~~~~~~~~~~~^
-        path_or_repo_id,
-        ^^^^^^^^^^^^^^^^
-    ...<10 lines>...
-        tqdm_class=tqdm_class,
-        ^^^^^^^^^^^^^^^^^^^^^^
+import os
+import sys
+import json
+import re
+from pathlib import Path
+from bs4 import BeautifulSoup
+ 
+# Configure Python interpreter for Spark
+os.environ["PYSPARK_PYTHON"] = sys.executable
+os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
+ 
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import udf, col, concat_ws
+from pyspark.sql.types import ArrayType, StringType
+ 
+ 
+# Locate project files
+project_folder = Path(__file__).resolve().parents[1]
+ 
+input_file = project_folder / "data" / "sample_bronze_news.json"
+alias_file = project_folder / "config" / "company_aliases.json"
+ 
+ 
+# Read company aliases
+with open(alias_file, "r", encoding="utf-8") as file:
+    company_aliases = json.load(file)
+ 
+ 
+# Prepare aliases for matching
+alias_patterns = []
+ 
+for ticker, aliases in company_aliases.items():
+    for alias in aliases:
+        pattern = re.compile(
+            r"(?<!\w)" + re.escape(alias) + r"(?!\w)",
+            re.IGNORECASE
+        )
+        alias_patterns.append((ticker, alias, pattern))
+ 
+ 
+# Clean HTML content
+def clean_html(html_content):
+ 
+    if html_content is None:
+        return ""
+ 
+    soup = BeautifulSoup(html_content, "html.parser")
+ 
+    return soup.get_text(separator=" ", strip=True)
+ 
+ 
+# Extract all matching tickers
+def extract_tickers(text):
+ 
+    if not text:
+        return []
+ 
+    matched_tickers = set()
+ 
+    for ticker, alias, pattern in alias_patterns:
+        if pattern.search(text):
+            matched_tickers.add(ticker)
+ 
+    return sorted(matched_tickers)
+ 
+ 
+# Start Spark
+spark = None
+ 
+try:
+    spark = (
+        SparkSession.builder
+        .appName("SilverNewsTickerExtraction")
+        .master("local[*]")
+        .getOrCreate()
     )
-    ^
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\huggingface_hub\utils\_validators.py", line 89, in _inner_fn
-    return fn(*args, **kwargs)
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\huggingface_hub\utils\_http.py", line 276, in _inner
-    return fn(*args, **kwargs)
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\huggingface_hub\file_download.py", line 1047, in hf_hub_download
-    return _hf_hub_download_to_cache_dir(
-        # Destination
-    ...<15 lines>...
-        dry_run=dry_run,
+ 
+    # Read Bronze news
+    df = (
+        spark.read
+        .option("multiLine", "true")
+        .json(str(input_file))
     )
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\huggingface_hub\file_download.py", line 1285, in _hf_hub_download_to_cache_dir
-    _download_to_tmp_and_move(
-    ~~~~~~~~~~~~~~~~~~~~~~~~~^
-        incomplete_path=Path(blob_path + ".incomplete"),
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    ...<8 lines>...
-        tqdm_class=tqdm_class,
-        ^^^^^^^^^^^^^^^^^^^^^^
+ 
+    # Remove duplicate article IDs
+    df = df.dropDuplicates(["article_id"])
+ 
+    # Clean article content
+    clean_html_udf = udf(clean_html, StringType())
+ 
+    df = df.withColumn(
+        "cleaned_text",
+        clean_html_udf(col("body_html"))
     )
-    ^
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\huggingface_hub\file_download.py", line 2033, in _download_to_tmp_and_move
-    http_get(
-    ~~~~~~~~^
-        url_to_download,
-        ^^^^^^^^^^^^^^^^
-    ...<3 lines>...
-        tqdm_class=tqdm_class,
-        ^^^^^^^^^^^^^^^^^^^^^^
+ 
+    # Combine headline and cleaned article content
+    df = df.withColumn(
+        "search_text",
+        concat_ws(" ", col("headline"), col("cleaned_text"))
     )
-    ^
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\huggingface_hub\utils\_validators.py", line 89, in _inner_fn
-    return fn(*args, **kwargs)
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\huggingface_hub\file_download.py", line 401, in http_get
-    hf_raise_for_status(response)
-    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\huggingface_hub\utils\_http.py", line 996, in hf_raise_for_status
-    raise _format(HfHubHTTPError, str(e), response) from e
-huggingface_hub.errors.HfHubHTTPError: Server error '503 Service Unavailable' for url 'https://us.aws.cdn.hf.co/xet-bridge-us/621ffdc036468d709f176f71/97c9cb12d04352c17ea4a86542c6411d19940e4418e13199087eba3230f3c144?user_id=public&response-content-disposition=inline%3B+filename*%3DUTF-8%27%27model.safetensors%3B+filename%3D%22model.safetensors%22%3B&xip=0EN7IJuHjdU&X-Xet-Cas-Uid=public&Expires=1794286670&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly91cy5hd3MuY2RuLmhmLmNvL3hldC1icmlkZ2UtdXMvNjIxZmZkYzAzNjQ2OGQ3MDlmMTc2ZjcxLzk3YzljYjEyZDA0MzUyYzE3ZWE0YTg2NTQyYzY0MTFkMTk5NDBlNDQxOGUxMzE5OTA4N2ViYTMyMzBmM2MxNDRcXD91c2VyX2lkPXB1YmxpYyZyZXNwb25zZS1jb250ZW50LWRpc3Bvc2l0aW9uPWlubGluZSUzQitmaWxlbmFtZSUyQSUzRFVURi04JTI3JTI3bW9kZWwuc2FmZXRlbnNvcnMlM0IrZmlsZW5hbWUlM0QlMjJtb2RlbC5zYWZldGVuc29ycyUyMiUzQiZ4aXA9MEVON0lKdUhqZFUmWC1YZXQtQ2FzLVVpZD1wdWJsaWMiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkVwb2NoVGltZSI6MTc5NDI4NjY3MH19fV19&Signature=MEQCIDYyLa52MBlNDdvFFbNc2qLMC8bCmt8k4shIJl-N3M3PAiBP93dJZ6aqy45Byiwb-Tb3u6P9wBLV9K9idgHnqhLGSA__&Key-Pair-Id=01KXEF4KZ1B6FV465MAWR4M21F&Hash-Algorithm=SHA256'
-For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/503
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\src\sentiment_analysis.py", line 10, in <module>
-    model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\transformers\models\auto\auto_factory.py", line 406, in from_pretrained
-    return model_class.from_pretrained(
-           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
-        pretrained_model_name_or_path, *model_args, config=config, **hub_kwargs, **kwargs
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 
+    # Register ticker extraction function
+    extract_tickers_udf = udf(
+        extract_tickers,
+        ArrayType(StringType())
     )
-    ^
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\transformers\modeling_utils.py", line 4251, in from_pretrained
-    checkpoint_files, sharded_metadata = _get_resolved_checkpoint_files(
-                                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
-        pretrained_model_name_or_path=pretrained_model_name_or_path,
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    ...<7 lines>...
-        tqdm_class=tqdm_class,
-        ^^^^^^^^^^^^^^^^^^^^^^
+ 
+    # Extract company tickers
+    result_df = df.withColumn(
+        "tickers",
+        extract_tickers_udf(col("search_text"))
     )
-    ^
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\transformers\modeling_utils.py", line 673, in _get_resolved_checkpoint_files
-    resolved_archive_file = cached_file(pretrained_model_name_or_path, filename, **cached_file_kwargs)
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\transformers\utils\hub.py", line 370, in cached_file
-    file = cached_files(path_or_repo_id=path_or_repo_id, filenames=[filename], **kwargs)
-  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\transformers\utils\hub.py", line 630, in cached_files
-    raise OSError(f"There was a specific connection error when trying to load {path_or_repo_id}:\n{e}") from e
-OSError: There was a specific connection error when trying to load ProsusAI/finbert:
-Server error '503 Service Unavailable' for url 'https://us.aws.cdn.hf.co/xet-bridge-us/621ffdc036468d709f176f71/97c9cb12d04352c17ea4a86542c6411d19940e4418e13199087eba3230f3c144?user_id=public&response-content-disposition=inline%3B+filename*%3DUTF-8%27%27model.safetensors%3B+filename%3D%22model.safetensors%22%3B&xip=0EN7IJuHjdU&X-Xet-Cas-Uid=public&Expires=1794286670&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly91cy5hd3MuY2RuLmhmLmNvL3hldC1icmlkZ2UtdXMvNjIxZmZkYzAzNjQ2OGQ3MDlmMTc2ZjcxLzk3YzljYjEyZDA0MzUyYzE3ZWE0YTg2NTQyYzY0MTFkMTk5NDBlNDQxOGUxMzE5OTA4N2ViYTMyMzBmM2MxNDRcXD91c2VyX2lkPXB1YmxpYyZyZXNwb25zZS1jb250ZW50LWRpc3Bvc2l0aW9uPWlubGluZSUzQitmaWxlbmFtZSUyQSUzRFVURi04JTI3JTI3bW9kZWwuc2FmZXRlbnNvcnMlM0IrZmlsZW5hbWUlM0QlMjJtb2RlbC5zYWZldGVuc29ycyUyMiUzQiZ4aXA9MEVON0lKdUhqZFUmWC1YZXQtQ2FzLVVpZD1wdWJsaWMiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkVwb2NoVGltZSI6MTc5NDI4NjY3MH19fV19&Signature=MEQCIDYyLa52MBlNDdvFFbNc2qLMC8bCmt8k4shIJl-N3M3PAiBP93dJZ6aqy45Byiwb-Tb3u6P9wBLV9K9idgHnqhLGSA__&Key-Pair-Id=01KXEF4KZ1B6FV465MAWR4M21F&Hash-Algorithm=SHA256'
-For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/503
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline>
+ 
+    # Display results
+    print("\nNEWS WITH EXTRACTED TICKERS")
+ 
+    result_df.select(
+        "article_id",
+        "headline",
+        "tickers"
+    ).show(truncate=False)
+ 
+    print("\nTICKER EXTRACTION COMPLETED")
+ 
+except Exception as error:
+    print("Ticker extraction error:", error)
+ 
+finally:
+    if spark is not None:
+        spark.stop()
+        print("\nSpark session stopped.")
