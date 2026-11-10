@@ -1,1 +1,99 @@
-hi
+>> .\venv\Scripts\Activate.ps1    
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> $env:HF_HUB_DISABLE_XET = "1"
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\src\sentiment_analysis.py                                                                                   
+Loading FinBERT model...          
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Traceback (most recent call last):
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\huggingface_hub\utils\_http.py", line 866, in hf_raise_for_status
+    response.raise_for_status()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\httpx2\_models.py", line 828, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx2.HTTPStatusError: Server error '503 Service Unavailable' for url 'https://us.aws.cdn.hf.co/xet-bridge-us/621ffdc036468d709f176f71/97c9cb12d04352c17ea4a86542c6411d19940e4418e13199087eba3230f3c144?user_id=public&response-content-disposition=inline%3B+filename*%3DUTF-8%27%27model.safetensors%3B+filename%3D%22model.safetensors%22%3B&xip=0EN7IJuHjdU&X-Xet-Cas-Uid=public&Expires=1794286670&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly91cy5hd3MuY2RuLmhmLmNvL3hldC1icmlkZ2UtdXMvNjIxZmZkYzAzNjQ2OGQ3MDlmMTc2ZjcxLzk3YzljYjEyZDA0MzUyYzE3ZWE0YTg2NTQyYzY0MTFkMTk5NDBlNDQxOGUxMzE5OTA4N2ViYTMyMzBmM2MxNDRcXD91c2VyX2lkPXB1YmxpYyZyZXNwb25zZS1jb250ZW50LWRpc3Bvc2l0aW9uPWlubGluZSUzQitmaWxlbmFtZSUyQSUzRFVURi04JTI3JTI3bW9kZWwuc2FmZXRlbnNvcnMlM0IrZmlsZW5hbWUlM0QlMjJtb2RlbC5zYWZldGVuc29ycyUyMiUzQiZ4aXA9MEVON0lKdUhqZFUmWC1YZXQtQ2FzLVVpZD1wdWJsaWMiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkVwb2NoVGltZSI6MTc5NDI4NjY3MH19fV19&Signature=MEQCIDYyLa52MBlNDdvFFbNc2qLMC8bCmt8k4shIJl-N3M3PAiBP93dJZ6aqy45Byiwb-Tb3u6P9wBLV9K9idgHnqhLGSA__&Key-Pair-Id=01KXEF4KZ1B6FV465MAWR4M21F&Hash-Algorithm=SHA256'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/503
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\transformers\utils\hub.py", line 537, in cached_files
+    hf_hub_download(
+    ~~~~~~~~~~~~~~~^
+        path_or_repo_id,
+        ^^^^^^^^^^^^^^^^
+    ...<10 lines>...
+        tqdm_class=tqdm_class,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\huggingface_hub\utils\_validators.py", line 89, in _inner_fn
+    return fn(*args, **kwargs)
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\huggingface_hub\utils\_http.py", line 276, in _inner
+    return fn(*args, **kwargs)
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\huggingface_hub\file_download.py", line 1047, in hf_hub_download
+    return _hf_hub_download_to_cache_dir(
+        # Destination
+    ...<15 lines>...
+        dry_run=dry_run,
+    )
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\huggingface_hub\file_download.py", line 1285, in _hf_hub_download_to_cache_dir
+    _download_to_tmp_and_move(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        incomplete_path=Path(blob_path + ".incomplete"),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<8 lines>...
+        tqdm_class=tqdm_class,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\huggingface_hub\file_download.py", line 2033, in _download_to_tmp_and_move
+    http_get(
+    ~~~~~~~~^
+        url_to_download,
+        ^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+        tqdm_class=tqdm_class,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\huggingface_hub\utils\_validators.py", line 89, in _inner_fn
+    return fn(*args, **kwargs)
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\huggingface_hub\file_download.py", line 401, in http_get
+    hf_raise_for_status(response)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\huggingface_hub\utils\_http.py", line 996, in hf_raise_for_status
+    raise _format(HfHubHTTPError, str(e), response) from e
+huggingface_hub.errors.HfHubHTTPError: Server error '503 Service Unavailable' for url 'https://us.aws.cdn.hf.co/xet-bridge-us/621ffdc036468d709f176f71/97c9cb12d04352c17ea4a86542c6411d19940e4418e13199087eba3230f3c144?user_id=public&response-content-disposition=inline%3B+filename*%3DUTF-8%27%27model.safetensors%3B+filename%3D%22model.safetensors%22%3B&xip=0EN7IJuHjdU&X-Xet-Cas-Uid=public&Expires=1794286670&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly91cy5hd3MuY2RuLmhmLmNvL3hldC1icmlkZ2UtdXMvNjIxZmZkYzAzNjQ2OGQ3MDlmMTc2ZjcxLzk3YzljYjEyZDA0MzUyYzE3ZWE0YTg2NTQyYzY0MTFkMTk5NDBlNDQxOGUxMzE5OTA4N2ViYTMyMzBmM2MxNDRcXD91c2VyX2lkPXB1YmxpYyZyZXNwb25zZS1jb250ZW50LWRpc3Bvc2l0aW9uPWlubGluZSUzQitmaWxlbmFtZSUyQSUzRFVURi04JTI3JTI3bW9kZWwuc2FmZXRlbnNvcnMlM0IrZmlsZW5hbWUlM0QlMjJtb2RlbC5zYWZldGVuc29ycyUyMiUzQiZ4aXA9MEVON0lKdUhqZFUmWC1YZXQtQ2FzLVVpZD1wdWJsaWMiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkVwb2NoVGltZSI6MTc5NDI4NjY3MH19fV19&Signature=MEQCIDYyLa52MBlNDdvFFbNc2qLMC8bCmt8k4shIJl-N3M3PAiBP93dJZ6aqy45Byiwb-Tb3u6P9wBLV9K9idgHnqhLGSA__&Key-Pair-Id=01KXEF4KZ1B6FV465MAWR4M21F&Hash-Algorithm=SHA256'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/503
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\src\sentiment_analysis.py", line 10, in <module>
+    model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\transformers\models\auto\auto_factory.py", line 406, in from_pretrained
+    return model_class.from_pretrained(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        pretrained_model_name_or_path, *model_args, config=config, **hub_kwargs, **kwargs
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\transformers\modeling_utils.py", line 4251, in from_pretrained
+    checkpoint_files, sharded_metadata = _get_resolved_checkpoint_files(
+                                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        pretrained_model_name_or_path=pretrained_model_name_or_path,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+        tqdm_class=tqdm_class,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\transformers\modeling_utils.py", line 673, in _get_resolved_checkpoint_files
+    resolved_archive_file = cached_file(pretrained_model_name_or_path, filename, **cached_file_kwargs)
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\transformers\utils\hub.py", line 370, in cached_file
+    file = cached_files(path_or_repo_id=path_or_repo_id, filenames=[filename], **kwargs)
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\transformers\utils\hub.py", line 630, in cached_files
+    raise OSError(f"There was a specific connection error when trying to load {path_or_repo_id}:\n{e}") from e
+OSError: There was a specific connection error when trying to load ProsusAI/finbert:
+Server error '503 Service Unavailable' for url 'https://us.aws.cdn.hf.co/xet-bridge-us/621ffdc036468d709f176f71/97c9cb12d04352c17ea4a86542c6411d19940e4418e13199087eba3230f3c144?user_id=public&response-content-disposition=inline%3B+filename*%3DUTF-8%27%27model.safetensors%3B+filename%3D%22model.safetensors%22%3B&xip=0EN7IJuHjdU&X-Xet-Cas-Uid=public&Expires=1794286670&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly91cy5hd3MuY2RuLmhmLmNvL3hldC1icmlkZ2UtdXMvNjIxZmZkYzAzNjQ2OGQ3MDlmMTc2ZjcxLzk3YzljYjEyZDA0MzUyYzE3ZWE0YTg2NTQyYzY0MTFkMTk5NDBlNDQxOGUxMzE5OTA4N2ViYTMyMzBmM2MxNDRcXD91c2VyX2lkPXB1YmxpYyZyZXNwb25zZS1jb250ZW50LWRpc3Bvc2l0aW9uPWlubGluZSUzQitmaWxlbmFtZSUyQSUzRFVURi04JTI3JTI3bW9kZWwuc2FmZXRlbnNvcnMlM0IrZmlsZW5hbWUlM0QlMjJtb2RlbC5zYWZldGVuc29ycyUyMiUzQiZ4aXA9MEVON0lKdUhqZFUmWC1YZXQtQ2FzLVVpZD1wdWJsaWMiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkVwb2NoVGltZSI6MTc5NDI4NjY3MH19fV19&Signature=MEQCIDYyLa52MBlNDdvFFbNc2qLMC8bCmt8k4shIJl-N3M3PAiBP93dJZ6aqy45Byiwb-Tb3u6P9wBLV9K9idgHnqhLGSA__&Key-Pair-Id=01KXEF4KZ1B6FV465MAWR4M21F&Hash-Algorithm=SHA256'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/503
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline>
