@@ -1,11 +1,14 @@
 
 import os
 import sys
-import json
 from pathlib import Path
 from datetime import timezone
 
 import pyarrow.parquet as pq
+
+# --------------------------------------------------
+# 1. PYTHON ENVIRONMENT
+# --------------------------------------------------
 
 os.environ["PYSPARK_PYTHON"] = sys.executable
 os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
@@ -20,9 +23,11 @@ from pyspark.sql.types import (
     TimestampType
 )
 
+from checkpoint_manager import load_processed_files
+
 
 # --------------------------------------------------
-# 1. PROJECT PATHS
+# 2. PROJECT PATHS
 # --------------------------------------------------
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -35,18 +40,9 @@ BRONZE_PATH = (
     / "news"
 )
 
-CHECKPOINT_DIR = (
-    PROJECT_ROOT
-    / "silver_news"
-    / "data"
-    / "checkpoints"
-)
-
-PROCESSED_FILES_PATH = CHECKPOINT_DIR / "processed_files.json"
-
 
 # --------------------------------------------------
-# 2. SCHEMAS
+# 3. SCHEMAS
 # --------------------------------------------------
 
 bronze_schema = StructType([
@@ -71,26 +67,6 @@ article_schema = StructType([
 
 
 # --------------------------------------------------
-# 3. LOAD FILE CHECKPOINT
-# --------------------------------------------------
-
-def load_processed_files():
-
-    if not PROCESSED_FILES_PATH.exists():
-        return set()
-
-    with open(
-        PROCESSED_FILES_PATH,
-        "r",
-        encoding="utf-8"
-    ) as file:
-
-        data = json.load(file)
-
-    return set(data.get("processed_files", []))
-
-
-# --------------------------------------------------
 # 4. DISCOVER NEW BRONZE FILES
 # --------------------------------------------------
 
@@ -101,7 +77,9 @@ def discover_new_files():
             f"Bronze folder not found: {BRONZE_PATH}"
         )
 
-    all_files = sorted(BRONZE_PATH.glob("*.parquet"))
+    all_files = sorted(
+        BRONZE_PATH.glob("*.parquet")
+    )
 
     processed_files = load_processed_files()
 
@@ -145,6 +123,7 @@ def read_new_bronze(spark):
         print(f"\nReading: {parquet_file.name}")
 
         arrow_table = pq.read_table(parquet_file)
+
         file_records = arrow_table.to_pylist()
 
         for record in file_records:
@@ -153,7 +132,10 @@ def read_new_bronze(spark):
 
             timestamp = record.get("kafka_ts")
 
-            if timestamp is not None and timestamp.tzinfo is not None:
+            if (
+                timestamp is not None
+                and timestamp.tzinfo is not None
+            ):
                 record["kafka_ts"] = (
                     timestamp.astimezone(timezone.utc)
                     .replace(tzinfo=None)
@@ -165,6 +147,7 @@ def read_new_bronze(spark):
 
     if not records:
         print("\nNew files contain no records.")
+
         return None, new_files
 
     bronze_df = spark.createDataFrame(
@@ -174,7 +157,10 @@ def read_new_bronze(spark):
 
     parsed_df = bronze_df.withColumn(
         "article",
-        from_json(col("raw_json"), article_schema)
+        from_json(
+            col("raw_json"),
+            article_schema
+        )
     )
 
     news_df = parsed_df.select(
@@ -195,6 +181,9 @@ def read_new_bronze(spark):
         col("article.ingested_at").alias("ingested_at")
     )
 
-    print("\nTotal new Bronze records:", news_df.count())
+    print(
+        "\nTotal new Bronze records:",
+        news_df.count()
+    )
 
     return news_df, new_files
