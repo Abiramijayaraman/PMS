@@ -1,1 +1,158 @@
-python -c "import pyarrow.parquet as pq; import json; from pathlib import Path; files=sorted(Path('silver_news/data/actual_bronze/news').glob('*.parquet')); [(print('\nFILE:',f.name),[(print('\nARTICLE',i+1),print(json.dumps(json.loads(r['raw_json']),indent=2,ensure_ascii=False))) for i,r in enumerate(pq.read_table(f).to_pylist())]) for f in files]"
+FILE: news_20261111T121717065202Z_3db0d16c.parquet
+
+ARTICLE 1
+{
+  "article_id": "ace671ba086e7aed98d7a37c90993e58e2fe5cefaff41ab0dc7254b3553b2d29",
+  "published_at": "2026-11-11T12:14:38+00:00",
+  "source": "TipRanks",
+  "headline": "Bajaj Finance Approves Opening of QIP at ₹992.25 Floor Price - TipRanks",
+  "full_text": "<a href=\"https://news.google.com/rss/articles/CBMisAFBVV95cUxQQUJyYjNtb2ZtM0JybkY0ak9pdVhpTXhFSXpJQUdsaWtGZzJiZjM2X1dRel8yMDZSUHh1QnV0T2h1NlROWTFzd19tSUFEQmMwQXhXSkN4bzktUGhHM2VSUzhWWmxUYjZLMEZBcUNlRlB6YUJ2VzMyTzN1c25mOUJfT0lHUnRxeFZyazV4TDdXVFlpNVFCR3c5RnkxTEpNY1F2QnVZQ1ZNcUQ4d0diU1o5Ng?oc=5\" target=\"_blank\">Bajaj Finance Approves Opening of QIP at ₹992.25 Floor Price</a>&nbsp;&nbsp;<font color=\"#6f6f6f\">TipRanks</font>",
+  "url": "https://news.google.com/rss/articles/CBMisAFBVV95cUxQQUJyYjNtb2ZtM0JybkY0ak9pdVhpTXhFSXpJQUdsaWtGZzJiZjM2X1dRel8yMDZSUHh1QnV0T2h1NlROWTFzd19tSUFEQmMwQXhXSkN4bzktUGhHM2VSUzhWWmxUYjZLMEZBcUNlRlB6YUJ2VzMyTzN1c25mOUJfT0lHUnRxeFZyazV4TDdXVFlpNVFCR3c5RnkxTEpNY1F2QnVZQ1ZNcUQ4d0diU1o5Ng?oc=5",
+  "ingested_at": "2026-11-11T12:17:16.947453+00:00"
+}
+
+FILE: news_20261111T140258714551Z_b912528c.parquet
+
+ARTICLE 1
+{
+  "article_id": "bba566cd475cef8feaf73d348a87ba2a1ff0cdd09b24ad2d372bbb3135bb52a0",
+  "published_at": "2026-11-11T01:58:56+00:00",
+  "source": "NDTV Profit",
+  "headline": "RIL, HDFC Bank, Axis To Max Healthcare: Jefferies Picks 12 Stocks For FPI Comeback - NDTV Profit",
+  "full_text": "<a href=\"https://news.google.com/rss/articles/CBMihAJBVV95cUxPR25TSU1vSEl5ZjV6MWdVWE8tODNxbkVJX25SSUJ2c01jY3lmbGNhTmtVQkQycmljVE9tMTZJdEhNeTdwNEw5c0I3X09GNVc5Q2k5c00tcXlrb3ZZeDQ1UG5NampDeGFKLVdGUzhuOWwwUVpBVFRqTTVpb1N4b2l1U29EZ1YwZDVLVGVldi1RVTM4ZmtTcmQzY3BrcUQzVjNYUVpDUWFwajJoMUs5NndVM3k1cmRPWlc0RWJibnV6ZzFLN1BTMF9Ka090dnVhbzVYbW1uLXJJMzRqUzBBenR4Nm5idjJoRXNnSkwwYmtiNWlpMzZETjh1Q1E0TWVJUy0xRWFWY9IBjAJBVV95cUxNLV9uOTdwSThaMUZfdjNvemM0WlRoZlFGOEJrV0JkRkZ6YzNLRzRnby1GWTh4TDJWdmRtcWQzdHIyMmZLb0tub1ZhU2ptcGlRMUxQLXNOZ3RmeGlLcGJtSXBuZWtkYUlISG02dk5uZG1TNFZVSE84UkdqSGRjWHp5OWNxYjlIYzNkZjY1ZWUtUUFiNk1jdmZKZUdZNGpmZm1vaXVQVm9YTVIxcW1mYllCYzhiby1sMTVTaERDR29VX052a1BJYUF0MDZZUmc3NHJIbmZKUWhpblNxR3laRXVua1F6a3R0SXNCNE1Fa1N5NVVCQ3hRbF9uMlZuRnFxbzRDc185cFk4X081azFi?oc=5\" target=\"_blank\">RIL, HDFC Bank, Axis To Max Healthcare: Jefferies Picks 12 Stocks For FPI Comeback</a>&nbsp;&nbsp;<font color=\"#6f6f6f\">NDTV Profit</font>",
+  "url": "https://news.google.com/rss/articles/CBMihAJBVV95cUxPR25TSU1vSEl5ZjV6MWdVWE8tODNxbkVJX25SSUJ2c01jY3lmbGNhTmtVQkQycmljVE9tMTZJdEhNeTdwNEw5c0I3X09GNVc5Q2k5c00tcXlrb3ZZeDQ1UG5NampDeGFKLVdGUzhuOWwwUVpBVFRqTTVpb1N4b2l1U29EZ1YwZDVLVGVldi1RVTM4ZmtTcmQzY3BrcUQzVjNYUVpDUWFwajJoMUs5NndVM3k1cmRPWlc0RWJibnV6ZzFLN1BTMF9Ka090dnVhbzVYbW1uLXJJMzRqUzBBenR4Nm5idjJoRXNnSkwwYmtiNWlpMzZETjh1Q1E0TWVJUy0xRWFWY9IBjAJBVV95cUxNLV9uOTdwSThaMUZfdjNvemM0WlRoZlFGOEJrV0JkRkZ6YzNLRzRnby1GWTh4TDJWdmRtcWQzdHIyMmZLb0tub1ZhU2ptcGlRMUxQLXNOZ3RmeGlLcGJtSXBuZWtkYUlISG02dk5uZG1TNFZVSE84UkdqSGRjWHp5OWNxYjlIYzNkZjY1ZWUtUUFiNk1jdmZKZUdZNGpmZm1vaXVQVm9YTVIxcW1mYllCYzhiby1sMTVTaERDR29VX052a1BJYUF0MDZZUmc3NHJIbmZKUWhpblNxR3laRXVua1F6a3R0SXNCNE1Fa1N5NVVCQ3hRbF9uMlZuRnFxbzRDc185cFk4X081azFi?oc=5",
+  "ingested_at": "2026-11-11T14:02:30.273005+00:00"
+}
+
+ARTICLE 2
+{
+  "article_id": "6a6f6284e981898c7d2108c743ca4bb36aa427ea6d280e257be4ede7fa32a644",
+  "published_at": "2026-10-17T07:00:00+00:00",
+  "source": "Moneycontrol.com",
+  "headline": "ICICI Bank Q2 results: Net profit rises 20% to Rs 14,843 crore, beats estimates; NII up 18% - Moneycontrol.com",
+  "full_text": "<a href=\"https://news.google.com/rss/articles/CBMi5wFBVV95cUxPRDNXN25vSzcwbDFuTUQyZXJ2Q05Bby1Pc19ESHYyaFFyZWMwYUU1QlltZnNDTmNtSUhwQUxWczZOZUdNakhaQUxVSjRYeHNEMFJKeDMydlFYV1AyOE5INmtpeldCQXRpSWZRYkFfUWpLcmxPVHgwd1h3b25kUWowOVlWSmdldG92Wi1EZjI0ZFRNbWtyTkpheThleHlJVGZCWUJRRVYyalhQQ0xILU9pVldiLUt4Z1hHQkNkMWpFMXRMMEJhamJ2MUVxYjNCdkNmYlp5WXJFNW5JdHpSQWdzR2lNQVdYWXfSAewBQVVfeXFMTkJ2ekVwUkZGUFFHTUxpdy1IVDBZay00ZEJ0UVZDb01qd3FZNmNzVXFscG9uZEV0bXhmRjRhamFKWXIwLWVLM0NIb0N5dGhJczMwZWJIUTh1Z3V1TkFGVVNUdEpnbmE0TTlzejRDeWRWT1J5SHB3Q2dPcXpuM1o5SVNTNWZLeVd4UGNMWktqT2h6dWpGaElMOVE1Y3A5X3A4dXFIekZmOUlhZVhNSFNWWXM4eE8teWN5LURSZTZSZW4yUHZLYmxwcjBaUjFvUkxJVjFNNDljNVRNTEVhY3hwVGM1NG9OSFRWVkI2VEI?oc=5\" target=\"_blank\">ICICI Bank Q2 results: Net profit rises 20% to Rs 14,843 crore, beats estimates; NII up 18%</a>&nbsp;&nbsp;<font color=\"#6f6f6f\">Moneycontrol.com</font>",
+  "url": "https://news.google.com/rss/articles/CBMi5wFBVV95cUxPRDNXN25vSzcwbDFuTUQyZXJ2Q05Bby1Pc19ESHYyaFFyZWMwYUU1QlltZnNDTmNtSUhwQUxWczZOZUdNakhaQUxVSjRYeHNEMFJKeDMydlFYV1AyOE5INmtpeldCQXRpSWZRYkFfUWpLcmxPVHgwd1h3b25kUWowOVlWSmdldG92Wi1EZjI0ZFRNbWtyTkpheThleHlJVGZCWUJRRVYyalhQQ0xILU9pVldiLUt4Z1hHQkNkMWpFMXRMMEJhamJ2MUVxYjNCdkNmYlp5WXJFNW5JdHpSQWdzR2lNQVdYWXfSAewBQVVfeXFMTkJ2ekVwUkZGUFFHTUxpdy1IVDBZay00ZEJ0UVZDb01qd3FZNmNzVXFscG9uZEV0bXhmRjRhamFKWXIwLWVLM0NIb0N5dGhJczMwZWJIUTh1Z3V1TkFGVVNUdEpnbmE0TTlzejRDeWRWT1J5SHB3Q2dPcXpuM1o5SVNTNWZLeVd4UGNMWktqT2h6dWpGaElMOVE1Y3A5X3A4dXFIekZmOUlhZVhNSFNWWXM4eE8teWN5LURSZTZSZW4yUHZLYmxwcjBaUjFvUkxJVjFNNDljNVRNTEVhY3hwVGM1NG9OSFRWVkI2VEI?oc=5",
+  "ingested_at": "2026-11-11T14:02:30.350973+00:00"
+}
+
+ARTICLE 3
+{
+  "article_id": "e1e59bed7ce58ba019828ca9a66295069a9c101878dc683ebae3fe4037055eac",
+  "published_at": "2026-11-03T13:27:47+00:00",
+  "source": "Investing.com India",
+  "headline": "Earnings call transcript: State Bank of India Q2 2027 profit rises, stock falls 5% - Investing.com India",
+  "full_text": "<a href=\"https://news.google.com/rss/articles/CBMi1wFBVV95cUxPY2hkY3MxbkRqWG5uWlpXdXZicGk3VUlPdWtkOVIxOXhKQll3aW1ZTDJXRnZxcXVRSkZBQzJhbG5SWnNjNlhZbjJWazBZV2V0Ykg1RWdrZG1MbWtJdVFIUTFNcHVBSVJrWEFCN3cyVDV0OUdFZllaVmV4NTJvbHBva3luU1RQMFRtUy04akk4VjBNUVoxMUxhSXdxNWFuRGNkTGRDVXhYMlh3NTI1VFZRa1gteU1YUV9TVjFWTGVydmNDQ0ZZQmNlcTdPY2w2MG4xTnNwT0ZkSQ?oc=5\" target=\"_blank\">Earnings call transcript: State Bank of India Q2 2027 profit rises, stock falls 5%</a>&nbsp;&nbsp;<font color=\"#6f6f6f\">Investing.com India</font>",
+  "url": "https://news.google.com/rss/articles/CBMi1wFBVV95cUxPY2hkY3MxbkRqWG5uWlpXdXZicGk3VUlPdWtkOVIxOXhKQll3aW1ZTDJXRnZxcXVRSkZBQzJhbG5SWnNjNlhZbjJWazBZV2V0Ykg1RWdrZG1MbWtJdVFIUTFNcHVBSVJrWEFCN3cyVDV0OUdFZllaVmV4NTJvbHBva3luU1RQMFRtUy04akk4VjBNUVoxMUxhSXdxNWFuRGNkTGRDVXhYMlh3NTI1VFZRa1gteU1YUV9TVjFWTGVydmNDQ0ZZQmNlcTdPY2w2MG4xTnNwT0ZkSQ?oc=5",
+  "ingested_at": "2026-11-11T14:02:30.497161+00:00"
+}
+
+ARTICLE 4
+{
+  "article_id": "e24c42d5692208648e23dd631858e3ab9abef29db7983a64c52f789c9c98070c",
+  "published_at": "2026-11-09T09:40:25+00:00",
+  "source": "NewsBytes",
+  "headline": "ICICI Securities gives Bharti Airtel buy rating with ₹2,430 target - NewsBytes",
+  "full_text": "<a href=\"https://news.google.com/rss/articles/CBMitAFBVV95cUxQMWM2enJfanZQVmhSVkt5REVCbDlZakVXOTBvZ01jWVJ0bUJKelhxNmlCcFMzb3Q2aFRpdjdkOXlZTl9hQmliTFVWb3c5QlhyWmtxamZPUTdmWkFHdE1GR0MzYlRILU1JNDNMVTdGcW1ma29qYW9rUmdHZDBBOFBGWmViSjRfbHQzZmxzNU84Nl9faTNEQkpGR3ZRN3FFQVVEcWxQbUU5RE5xTFpDYzQwRmoyRjQ?oc=5\" target=\"_blank\">ICICI Securities gives Bharti Airtel buy rating with ₹2,430 target</a>&nbsp;&nbsp;<font color=\"#6f6f6f\">NewsBytes</font>",
+  "url": "https://news.google.com/rss/articles/CBMitAFBVV95cUxQMWM2enJfanZQVmhSVkt5REVCbDlZakVXOTBvZ01jWVJ0bUJKelhxNmlCcFMzb3Q2aFRpdjdkOXlZTl9hQmliTFVWb3c5QlhyWmtxamZPUTdmWkFHdE1GR0MzYlRILU1JNDNMVTdGcW1ma29qYW9rUmdHZDBBOFBGWmViSjRfbHQzZmxzNU84Nl9faTNEQkpGR3ZRN3FFQVVEcWxQbUU5RE5xTFpDYzQwRmoyRjQ?oc=5",
+  "ingested_at": "2026-11-11T14:02:30.722825+00:00"
+}
+
+ARTICLE 5
+{
+  "article_id": "c2ebd89a49cc9faf146713ae4e7568a0aea9c99175cc6d190f9445e526f2b07e",
+  "published_at": "2026-11-11T08:45:18+00:00",
+  "source": "Prop News Time",
+  "headline": "Adani Enterprises plans INR 35,000-40,000 crore annual capex as airports, data centres and PVC drive expansion - Prop News Time",
+  "full_text": "<a href=\"https://news.google.com/rss/articles/CBMi8wFBVV95cUxOaW9GNmFmZm54WldIY0JWS050RnN2aTVpRU9qVkpXbFAwSmxrVWtWYnVJT2dHR0pzREs3LW9NT2ZwTTF6ckRMbFNNWGhkMFpHcWJqdVY3SDlRR3gxWkhkc2Q0M2taX1NUWWFvejQ0dk9INDJkbHhlV3dLbWE3M01TQ2pzczlDbFkwNUdYdE5KNFhkOW44dU5SQUtSalZReHZKX2NjeGNaXzFOLTZnaXdxZDYwcE1MZU9hUTljTEVGWWxpUWtfaXhMeWlvcm42SHUwWTZPZEdTVERKWVpqM256UEV0clM3WHJUa2t3RGJLcGtlYlE?oc=5\" target=\"_blank\">Adani Enterprises plans INR 35,000-40,000 crore annual capex as airports, data centres and PVC drive expansion</a>&nbsp;&nbsp;<font color=\"#6f6f6f\">Prop News Time</font>",
+  "url": "https://news.google.com/rss/articles/CBMi8wFBVV95cUxOaW9GNmFmZm54WldIY0JWS050RnN2aTVpRU9qVkpXbFAwSmxrVWtWYnVJT2dHR0pzREs3LW9NT2ZwTTF6ckRMbFNNWGhkMFpHcWJqdVY3SDlRR3gxWkhkc2Q0M2taX1NUWWFvejQ0dk9INDJkbHhlV3dLbWE3M01TQ2pzczlDbFkwNUdYdE5KNFhkOW44dU5SQUtSalZReHZKX2NjeGNaXzFOLTZnaXdxZDYwcE1MZU9hUTljTEVGWWxpUWtfaXhMeWlvcm42SHUwWTZPZEdTVERKWVpqM256UEV0clM3WHJUa2t3RGJLcGtlYlE?oc=5",
+  "ingested_at": "2026-11-11T14:02:30.820661+00:00"
+}
+
+ARTICLE 6
+{
+  "article_id": "d00a68553fe57e84eb4ea5fd73cba59555df770dcc38c31b5811758646987125",
+  "published_at": "2026-06-15T07:00:00+00:00",
+  "source": "LawBeat",
+  "headline": "Khaitan & Co Advises Reliance Industries On Strategic Partnership With Meta For AI Data Centre In India - LawBeat",
+  "full_text": "<a href=\"https://news.google.com/rss/articles/CBMi1AFBVV95cUxNUnVpN2R1cU1UazhYUmVkejVONWoydk12VUVTLVlvemYxQnlvWU1TdURoeHVveUlpVGdUcUc0NHFudFg3enZJVnlWbjJKUjJ2MmdBVWRXMW1PaGVublRTYXlQRnJkYWdJZHRLZUE0MGRqRklTaDhMVjhqTVhBWmI1ME1CbUdNUWllU05jY0Vsejhfb2JoMkFDYVJOSHlvLTRmaHNFV2o4QzhVODZyY3BLR29EdUQ4YkxUandmUG5kOHMxblJCTEdvR1VBbW1RRWhvbGZ3b9IB2gFBVV95cUxObExWSWFJaXdPVlh0ZEFHTmN0eTUtQjZGaktLb3U1RXp3LUZQMmVEdEZ3N0NjM1FrRWREWFB3WWhabTRPV3BhSFRhUWV1ckJMVEpMLW5iSmtnNlBoQUNJcjB2a2Z6Nkc4d0M3TU9iUWJHRE53bVNyaU1mTExXSXZqOVZyWmxsMTBhX2hXUzdFY2RqOVFTTUtCVUNTd2dZVVRISDdGUXIwUXNMQWNVMGoxeHlMVlBFRkdGYzhkZGltM1EzVTlSOTJrLWFPREZodjBhcDNYN24zUEZ2dw?oc=5\" target=\"_blank\">Khaitan & Co Advises Reliance Industries On Strategic Partnership With Meta For AI Data Centre In India</a>&nbsp;&nbsp;<font color=\"#6f6f6f\">LawBeat</font>",
+  "url": "https://news.google.com/rss/articles/CBMi1AFBVV95cUxNUnVpN2R1cU1UazhYUmVkejVONWoydk12VUVTLVlvemYxQnlvWU1TdURoeHVveUlpVGdUcUc0NHFudFg3enZJVnlWbjJKUjJ2MmdBVWRXMW1PaGVublRTYXlQRnJkYWdJZHRLZUE0MGRqRklTaDhMVjhqTVhBWmI1ME1CbUdNUWllU05jY0Vsejhfb2JoMkFDYVJOSHlvLTRmaHNFV2o4QzhVODZyY3BLR29EdUQ4YkxUandmUG5kOHMxblJCTEdvR1VBbW1RRWhvbGZ3b9IB2gFBVV95cUxObExWSWFJaXdPVlh0ZEFHTmN0eTUtQjZGaktLb3U1RXp3LUZQMmVEdEZ3N0NjM1FrRWREWFB3WWhabTRPV3BhSFRhUWV1ckJMVEpMLW5iSmtnNlBoQUNJcjB2a2Z6Nkc4d0M3TU9iUWJHRE53bVNyaU1mTExXSXZqOVZyWmxsMTBhX2hXUzdFY2RqOVFTTUtCVUNTd2dZVVRISDdGUXIwUXNMQWNVMGoxeHlMVlBFRkdGYzhkZGltM1EzVTlSOTJrLWFPREZodjBhcDNYN24zUEZ2dw?oc=5",
+  "ingested_at": "2026-11-11T14:02:30.048688+00:00"
+}
+
+ARTICLE 7
+{
+  "article_id": "7a647c9b226e0c002442ef7244802e6b7cac83897ea07d90891f975ed10a3742",
+  "published_at": "2026-08-31T07:00:00+00:00",
+  "source": "Yahoo Finance",
+  "headline": "Tata Consultancy Services Stock And Other Indian Dividend Anchors Built For Steady Income - Yahoo Finance",
+  "full_text": "<a href=\"https://news.google.com/rss/articles/CBMipAFBVV95cUxNT3V5ZVJ4clFFekxOdGFiQ1ROdTVOM3NVMWpLai1OUEE4M2VnX2NzR2kxcjlyYTdpVDJZYm5oUGdEdDR2eTV3NGU5aWh2WlAyM0J3ampoWWQ5ZnpjWllYWWF2TjlvOERiaW9xZ2hHSWVnV09kQ1pOalJpYmZkR0NTVXRod2VSU1MyZFhKekpyZlAtUzV4UkFrMVVFS2wybEZVTWkxNw?oc=5\" target=\"_blank\">Tata Consultancy Services Stock And Other Indian Dividend Anchors Built For Steady Income</a>&nbsp;&nbsp;<font color=\"#6f6f6f\">Yahoo Finance</font>",
+  "url": "https://news.google.com/rss/articles/CBMipAFBVV95cUxNT3V5ZVJ4clFFekxOdGFiQ1ROdTVOM3NVMWpLai1OUEE4M2VnX2NzR2kxcjlyYTdpVDJZYm5oUGdEdDR2eTV3NGU5aWh2WlAyM0J3ampoWWQ5ZnpjWllYWWF2TjlvOERiaW9xZ2hHSWVnV09kQ1pOalJpYmZkR0NTVXRod2VSU1MyZFhKekpyZlAtUzV4UkFrMVVFS2wybEZVTWkxNw?oc=5",
+  "ingested_at": "2026-11-11T14:02:30.124833+00:00"
+}
+
+ARTICLE 8
+{
+  "article_id": "4ff20cbbed92d4ad4c6719ffe03f6c6e81e01e8c2ebaa28143af8afdb36dd9b1",
+  "published_at": "2026-11-10T08:47:41+00:00",
+  "source": "ad-hoc-news.de",
+  "headline": "Infosys stock heads toward November 11 dividend payment - ad-hoc-news.de",
+  "full_text": "<a href=\"https://news.google.com/rss/articles/CBMiugFBVV95cUxPbzNJMk00bkowS1N6YzdNNFB4WkJuVHc4Zkc3UVpSbGxUYnoyN0dWNWxiWEh6ZzNvaHd3UVhsbXlqQlpTVGJuRmZVUzVoYi1TaVZQNE5EbUgtaWhlTU5CbG54RG43YURZeXpDOV9ZUTZTNTNKMmplQmxlbFN6eFZodlRUVFl5bmVVTWRURURfcmViSDNRb2Y5VVlFcFlHVy02YVFXVEdLZ0N4d2VEUGZ1WDA1b3drYUdBbWc?oc=5\" target=\"_blank\">Infosys stock heads toward November 11 dividend payment</a>&nbsp;&nbsp;<font color=\"#6f6f6f\">ad-hoc-news.de</font>",
+  "url": "https://news.google.com/rss/articles/CBMiugFBVV95cUxPbzNJMk00bkowS1N6YzdNNFB4WkJuVHc4Zkc3UVpSbGxUYnoyN0dWNWxiWEh6ZzNvaHd3UVhsbXlqQlpTVGJuRmZVUzVoYi1TaVZQNE5EbUgtaWhlTU5CbG54RG43YURZeXpDOV9ZUTZTNTNKMmplQmxlbFN6eFZodlRUVFl5bmVVTWRURURfcmViSDNRb2Y5VVlFcFlHVy02YVFXVEdLZ0N4d2VEUGZ1WDA1b3drYUdBbWc?oc=5",
+  "ingested_at": "2026-11-11T14:02:30.192834+00:00"
+}
+
+ARTICLE 9
+{
+  "article_id": "5c08a8c5d877893dd3c61616a61dec7def617aa2d7416e487fb9fd44c4682554",
+  "published_at": "2026-08-20T10:38:53+00:00",
+  "source": "Generics and Biosimilars Initiative",
+  "headline": "Sun Pharma completes $11.75bn financing syndication for Organon acquisition - Generics and Biosimilars Initiative",
+  "full_text": "<a href=\"https://news.google.com/rss/articles/CBMirgFBVV95cUxPUC1qYk9FOThSSVNCUjdjM2tYSmNTTHQ1UzFsMDlLeWZhaEZwRDJYZ2JnNUxmcmI4TVpzaVVPQlIzdjlGYjkxTWw2TlNpNWo3YnJNY1N1OXVTRHBxeTJGdEdZcndRQV91OFNNd01ObHNpTW5IaU5hd1BidHN0cnF0UGdEZE5FSDNYT2ZPY0hMQzlYUFczSkJ4Z2VfdjNJaTFYTTFPSUhicUpQX1VaaVE?oc=5\" target=\"_blank\">Sun Pharma completes $11.75bn financing syndication for Organon acquisition</a>&nbsp;&nbsp;<font color=\"#6f6f6f\">Generics and Biosimilars Initiative</font>",
+  "url": "https://news.google.com/rss/articles/CBMirgFBVV95cUxPUC1qYk9FOThSSVNCUjdjM2tYSmNTTHQ1UzFsMDlLeWZhaEZwRDJYZ2JnNUxmcmI4TVpzaVVPQlIzdjlGYjkxTWw2TlNpNWo3YnJNY1N1OXVTRHBxeTJGdEdZcndRQV91OFNNd01ObHNpTW5IaU5hd1BidHN0cnF0UGdEZE5FSDNYT2ZPY0hMQzlYUFczSkJ4Z2VfdjNJaTFYTTFPSUhicUpQX1VaaVE?oc=5",
+  "ingested_at": "2026-11-11T14:02:30.648328+00:00"
+}
+
+ARTICLE 10
+{
+  "article_id": "2c722ecefd8cb6bb9d3b7d9429d7f5b28192d157673fd1cd0fdbd22e4de4bf59",
+  "published_at": "2026-11-09T07:18:00+00:00",
+  "source": "Univest",
+  "headline": "Dividend Stocks in Focus: Coal India, Vedanta, IOCL and BPCL - Univest",
+  "full_text": "<a href=\"https://news.google.com/rss/articles/CBMi0wFBVV95cUxOemZPWHZuOHBCOUxTcW5QZTVlVDY4VTJQMkx6dUNNdEdZaXhSd0dzTzFTZzhQckJmcFRZejN2U2ZDMkt2NmNFLUR2MGI5ZGRoLUxxeDgyOExwQXhZS2czbU9rWVl4RzMtcnNYMTVSM1A0U3dCRU5xMkdPQ0NDNksyby1venRfUzlSWXJ6UkFOMHJWSGxoLVUxMFlOeEFJSnNWYy15QVMtUmZOcUY4bWhfV3RvN21FMno2dnM4MHE2VDBINTVycUtVZzNHU3UxdzdTZEI4?oc=5\" target=\"_blank\">Dividend Stocks in Focus: Coal India, Vedanta, IOCL and BPCL</a>&nbsp;&nbsp;<font color=\"#6f6f6f\">Univest</font>",
+  "url": "https://news.google.com/rss/articles/CBMi0wFBVV95cUxOemZPWHZuOHBCOUxTcW5QZTVlVDY4VTJQMkx6dUNNdEdZaXhSd0dzTzFTZzhQckJmcFRZejN2U2ZDMkt2NmNFLUR2MGI5ZGRoLUxxeDgyOExwQXhZS2czbU9rWVl4RzMtcnNYMTVSM1A0U3dCRU5xMkdPQ0NDNksyby1venRfUzlSWXJ6UkFOMHJWSGxoLVUxMFlOeEFJSnNWYy15QVMtUmZOcUY4bWhfV3RvN21FMno2dnM4MHE2VDBINTVycUtVZzNHU3UxdzdTZEI4?oc=5",
+  "ingested_at": "2026-11-11T14:02:30.902368+00:00"
+}
+
+ARTICLE 11
+{
+  "article_id": "70de7eb0da939f8c077370d9b22ac289af38d6674f344fe561d89afb72f7174b",
+  "published_at": "2026-11-11T07:33:28+00:00",
+  "source": "The Economic Times",
+  "headline": "Tata Steel shares rise 2%. Why brokerages remain bullish; see up to 30% upside potential - The Economic Times",
+  "full_text": "<a href=\"https://news.google.com/rss/articles/CBMi7wFBVV95cUxNNk9oVGlVUFZJUVlMcjhBQlRGeEZDLXc4aWhJRmZVTUc2dWViMmhCYmxLeHlfYlpRRnh4NkJBOEhRVjdKYy1EeHNoVFZtOHgwTWw3blJDMnBfbHZWdXBDRVcwSWo5Umh3ZjVjeUFqeWdEbVpCQ3JqZWJGRzhZakYzS0ZicjF4U2xLb2FtQWlNTUlPZEhXVFdmNjY1UFY4c0FKNGlKN2h5SFB0VU9aWGVTYUVWTjM0Y2twSU9ZQ1ZOYi12eXRzUHctOEZQMjRLVllGX0NpNkJZWHktbks3OFBIc1lGdklDSHlMdlQxbVdrVdIB9AFBVV95cUxOR3JBMHc2Y0RFR3RiOGZ1U0cwWHJKdHNzbDJka25TamNJTHMyU1VUd3k0U21BYlA5UU1oQ3FWdmFVbHo4ZmI2elpUWFhsdmVVclNJc1VDWG9TQmhaZGczQXZqR0M5YlFRT0FtMVNXMGNGeFFlNnJ2bThwT0c3VTZMaUc3cjVPS2M5cXVGRVE3cmdaZXpZbUcwZURGOEdIZVk0dHZJc2VnZjFwclZRN2ctMHp3Ni12UDVSbGFWdUdNYnJlcmYtdy0xdzFCTlgxSmJCZ0JFbXI2c2dWZDl6R2ZITmxkYjRNOExIQmlDektHQ3ViblRq?oc=5\" target=\"_blank\">Tata Steel shares rise 2%. Why brokerages remain bullish; see up to 30% upside potential</a>&nbsp;&nbsp;<font color=\"#6f6f6f\">The Economic Times</font>",
+  "url": "https://news.google.com/rss/articles/CBMi7wFBVV95cUxNNk9oVGlVUFZJUVlMcjhBQlRGeEZDLXc4aWhJRmZVTUc2dWViMmhCYmxLeHlfYlpRRnh4NkJBOEhRVjdKYy1EeHNoVFZtOHgwTWw3blJDMnBfbHZWdXBDRVcwSWo5Umh3ZjVjeUFqeWdEbVpCQ3JqZWJGRzhZakYzS0ZicjF4U2xLb2FtQWlNTUlPZEhXVFdmNjY1UFY4c0FKNGlKN2h5SFB0VU9aWGVTYUVWTjM0Y2twSU9ZQ1ZOYi12eXRzUHctOEZQMjRLVllGX0NpNkJZWHktbks3OFBIc1lGdklDSHlMdlQxbVdrVdIB9AFBVV95cUxOR3JBMHc2Y0RFR3RiOGZ1U0cwWHJKdHNzbDJka25TamNJTHMyU1VUd3k0U21BYlA5UU1oQ3FWdmFVbHo4ZmI2elpUWFhsdmVVclNJc1VDWG9TQmhaZGczQXZqR0M5YlFRT0FtMVNXMGNGeFFlNnJ2bThwT0c3VTZMaUc3cjVPS2M5cXVGRVE3cmdaZXpZbUcwZURGOEdIZVk0dHZJc2VnZjFwclZRN2ctMHp3Ni12UDVSbGFWdUdNYnJlcmYtdy0xdzFCTlgxSmJCZ0JFbXI2c2dWZDl6R2ZITmxkYjRNOExIQmlDektHQ3ViblRq?oc=5",
+  "ingested_at": "2026-11-11T14:02:30.421920+00:00"
+}
+
+ARTICLE 12
+{
+  "article_id": "423f517ade55fbaf98d5b1d0388d5e63b51c82e367f084c77a0e5553c2b2e31b",
+  "published_at": "2026-10-11T07:00:00+00:00",
+  "source": "TradingView",
+  "headline": "Weekly Recap: ITC Limited Q1 revenue, profit decline and 52-week low - TradingView",
+  "full_text": "<a href=\"https://news.google.com/rss/articles/CBMixwFBVV95cUxPVmpIcEU0X3FZMjlfTm1idHZ0VlpOZzFsbGE3MkxWUy1xVWl2dHFfOVMwSGJyMDZiOGFiWU1TQXRGU3dfN2dNOEVpbWk1OVV4Q1VlZ1Jxckc2bFJhMGQ3TnpqRHRrX0d6WXgxcTgyNlNRWjlxTzQyRHFqS3lTNEt2akx3bGNXQzRTd1lvb2lwUVJXWFdYMm85VGo3N1JlRjRGb0xKeHpCNk9xbmxwbVQ0SDJubV9udnBCbW5GZkV5d21yVkg5QWFz?oc=5\" target=\"_blank\">Weekly Recap: ITC Limited Q1 revenue, profit decline and 52-week low</a>&nbsp;&nbsp;<font color=\"#6f6f6f\">TradingView</font>",
+  "url": "https://news.google.com/rss/articles/CBMixwFBVV95cUxPVmpIcEU0X3FZMjlfTm1idHZ0VlpOZzFsbGE3MkxWUy1xVWl2dHFfOVMwSGJyMDZiOGFiWU1TQXRGU3dfN2dNOEVpbWk1OVV4Q1VlZ1Jxckc2bFJhMGQ3TnpqRHRrX0d6WXgxcTgyNlNRWjlxTzQyRHFqS3lTNEt2akx3bGNXQzRTd1lvb2lwUVJXWFdYMm85VGo3N1JlRjRGb0xKeHpCNk9xbmxwbVQ0SDJubV9udnBCbW5GZkV5d21yVkg5QWFz?oc=5",
+  "ingested_at": "2026-11-11T14:02:30.572703+00:00"
+}
+
+ARTICLE 13
+{
+  "article_id": "b1c177b40466d92da778a1eb89f952a2e51bcac7d43689f2acc5c50bcc9422fa",
+  "published_at": "2026-11-11T12:47:39+00:00",
+  "source": "The Economic Times",
+  "headline": "Bajaj Finance opens QIP at Rs 992.25 floor price, may offer up to 5% discount - The Economic Times",
+  "full_text": "<a href=\"https://news.google.com/rss/articles/CBMi4wFBVV95cUxPaGtQdkFpQ1RjV09JdF9CR2pZU2JDZ3ZuQW13R0pmeVpLLWtuLVMwNDVWZ2taUllaQS1MRFZ2QjJiX0FUbTdJNW9oald1dVZ2ZzBNOW9oMjRrdlNGOHoyVzZTNzhpSkw5Zmk2d0Z6Wmh4b1Zac0pzbS11Y0NpaXJQOWRGeS1kZGhWdktnSm14Z2g2M2RGdmMwVm14cnk0WTZqcGQtdTJCYmk1T2MyOHVMVVYwYlFKRDdKVkVONzVvU3FRdTJHOUtJeVJKaDdIQnczOVlyTUhSRkx0dXoxY2VGb3hXQdIB6AFBVV95cUxPbUJaRGpmOXV4SGJ5cmxoQ0NNNEhHMXZtX29tUUNlbG9JZFBDTF9mb2o3ODBNck1BU3hNbjdDOUQ5MFZJclp2T0ZuTlI4LWI5V1pwUGhqblpMYkRvSGlWMzFJTXNuR1YtV1ZNSWwteElFbmhISUppY01mNVUyRHExRHFvWWZXT0xPalBVTEo1VVlBLWJXWVpmc1dyRmgtXzRiYWx4dzdfYjFMMmllc2RZd0dnSTJMV0Z0UXo1U3V4U3g0RHVzalZNUkI2cDkzcFAwc3NEZkl5ZkFlbGotSFNmT3JrVGxqWjNR?oc=5\" target=\"_blank\">Bajaj Finance opens QIP at Rs 992.25 floor price, may offer up to 5% discount</a>&nbsp;&nbsp;<font color=\"#6f6f6f\">The Economic Times</font>",
+  "url": "https://news.google.com/rss/articles/CBMi4wFBVV95cUxPaGtQdkFpQ1RjV09JdF9CR2pZU2JDZ3ZuQW13R0pmeVpLLWtuLVMwNDVWZ2taUllaQS1MRFZ2QjJiX0FUbTdJNW9oald1dVZ2ZzBNOW9oMjRrdlNGOHoyVzZTNzhpSkw5Zmk2d0Z6Wmh4b1Zac0pzbS11Y0NpaXJQOWRGeS1kZGhWdktnSm14Z2g2M2RGdmMwVm14cnk0WTZqcGQtdTJCYmk1T2MyOHVMVVYwYlFKRDdKVkVONzVvU3FRdTJHOUtJeVJKaDdIQnczOVlyTUhSRkx0dXoxY2VGb3hXQdIB6AFBVV95cUxPbUJaRGpmOXV4SGJ5cmxoQ0NNNEhHMXZtX29tUUNlbG9JZFBDTF9mb2o3ODBNck1BU3hNbjdDOUQ5MFZJclp2T0ZuTlI4LWI5V1pwUGhqblpMYkRvSGlWMzFJTXNuR1YtV1ZNSWwteElFbmhISUppY01mNVUyRHExRHFvWWZXT0xPalBVTEo1VVlBLWJXWVpmc1dyRmgtXzRiYWx4dzdfYjFMMmllc2RZd0dnSTJMV0Z0UXo1U3V4U3g0RHVzalZNUkI2cDkzcFAwc3NEZkl5ZkFlbGotSFNmT3JrVGxqWjNR?oc=5",
+  "ingested_at": "2026-11-11T14:02:30.968948+00:00"
+}
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> 
