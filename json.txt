@@ -1,23 +1,12 @@
 
-import os
-import sys
 import json
 from pathlib import Path
-from datetime import timezone
 
-import pyarrow.parquet as pq
-
-os.environ["PYSPARK_PYTHON"] = sys.executable
-os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
-
-from pyspark.sql.functions import col, from_json
-from pyspark.sql.types import (
-    StructType,
-    StructField,
-    StringType,
-    IntegerType,
-    LongType,
-    TimestampType
+from pyspark.sql import Window
+from pyspark.sql.functions import (
+    col,
+    trim,
+    row_number
 )
 
 
@@ -27,14 +16,6 @@ from pyspark.sql.types import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-BRONZE_PATH = (
-    PROJECT_ROOT
-    / "silver_news"
-    / "data"
-    / "actual_bronze"
-    / "news"
-)
-
 CHECKPOINT_DIR = (
     PROJECT_ROOT
     / "silver_news"
@@ -42,159 +23,95 @@ CHECKPOINT_DIR = (
     / "checkpoints"
 )
 
-PROCESSED_FILES_PATH = CHECKPOINT_DIR / "processed_files.json"
+PROCESSED_ARTICLE_IDS_PATH = (
+    CHECKPOINT_DIR / "processed_article_ids.json"
+)
 
 
 # --------------------------------------------------
-# 2. SCHEMAS
+# 2. LOAD PREVIOUSLY PROCESSED ARTICLE IDs
 # --------------------------------------------------
 
-bronze_schema = StructType([
-    StructField("kafka_key", StringType(), True),
-    StructField("raw_json", StringType(), True),
-    StructField("topic", StringType(), True),
-    StructField("partition", IntegerType(), True),
-    StructField("offset", LongType(), True),
-    StructField("kafka_ts", TimestampType(), True),
-    StructField("bronze_file", StringType(), True)
-])
+def load_processed_article_ids():
 
-article_schema = StructType([
-    StructField("article_id", StringType(), True),
-    StructField("published_at", StringType(), True),
-    StructField("source", StringType(), True),
-    StructField("headline", StringType(), True),
-    StructField("full_text", StringType(), True),
-    StructField("url", StringType(), True),
-    StructField("ingested_at", StringType(), True)
-])
-
-
-# --------------------------------------------------
-# 3. LOAD FILE CHECKPOINT
-# --------------------------------------------------
-
-def load_processed_files():
-
-    if not PROCESSED_FILES_PATH.exists():
+    if not PROCESSED_ARTICLE_IDS_PATH.exists():
         return set()
 
     with open(
-        PROCESSED_FILES_PATH,
+        PROCESSED_ARTICLE_IDS_PATH,
         "r",
         encoding="utf-8"
     ) as file:
 
         data = json.load(file)
 
-    return set(data.get("processed_files", []))
+    return set(data.get("processed_article_ids", []))
 
 
 # --------------------------------------------------
-# 4. DISCOVER NEW BRONZE FILES
+# 3. ARTICLE-LEVEL DEDUPLICATION
 # --------------------------------------------------
 
-def discover_new_files():
+def deduplicate_news(news_df):
 
-    if not BRONZE_PATH.exists():
-        raise FileNotFoundError(
-            f"Bronze folder not found: {BRONZE_PATH}"
+    print("\n========== ARTICLE-LEVEL DEDUPLICATION ==========")
+
+    processed_ids = load_processed_article_ids()
+
+    print("Previously processed article IDs:", len(processed_ids))
+
+    # Separate records with missing article IDs.
+    missing_id_df = news_df.filter(
+        col("article_id").isNull()
+        | (trim(col("article_id")) == "")
+    )
+
+    # Only records with a valid article ID can be deduplicated.
+    identified_df = news_df.filter(
+        col("article_id").isNotNull()
+        & (trim(col("article_id")) != "")
+    )
+
+    # Remove article IDs processed in earlier batches.
+    if processed_ids:
+
+        identified_df = identified_df.filter(
+            ~col("article_id").isin(list(processed_ids))
         )
 
-    all_files = sorted(BRONZE_PATH.glob("*.parquet"))
-
-    processed_files = load_processed_files()
-
-    new_files = [
-        file for file in all_files
-        if file.name not in processed_files
-    ]
-
-    print("\n========== INCREMENTAL FILE CHECK ==========")
-
-    print("Total Bronze files:", len(all_files))
-    print("Previously processed files:", len(processed_files))
-    print("New files to process:", len(new_files))
-
-    for file in new_files:
-        print("NEW:", file.name)
-
-    for file in all_files:
-        if file.name in processed_files:
-            print("SKIPPED:", file.name)
-
-    return new_files
-
-
-# --------------------------------------------------
-# 5. READ AND PARSE NEW BRONZE FILES
-# --------------------------------------------------
-
-def read_new_bronze(spark):
-
-    new_files = discover_new_files()
-
-    if not new_files:
-        print("\nNo new Bronze files found.")
-        return None, []
-
-    records = []
-
-    for parquet_file in new_files:
-
-        print(f"\nReading: {parquet_file.name}")
-
-        arrow_table = pq.read_table(parquet_file)
-        file_records = arrow_table.to_pylist()
-
-        for record in file_records:
-
-            record["bronze_file"] = parquet_file.name
-
-            timestamp = record.get("kafka_ts")
-
-            if timestamp is not None and timestamp.tzinfo is not None:
-                record["kafka_ts"] = (
-                    timestamp.astimezone(timezone.utc)
-                    .replace(tzinfo=None)
-                )
-
-        print("Records in file:", len(file_records))
-
-        records.extend(file_records)
-
-    if not records:
-        print("\nNew files contain no records.")
-        return None, new_files
-
-    bronze_df = spark.createDataFrame(
-        records,
-        schema=bronze_schema
+    # Remove duplicate IDs within the current batch.
+    window_spec = (
+        Window
+        .partitionBy("article_id")
+        .orderBy(
+            col("ingested_at").desc_nulls_last(),
+            col("url").asc_nulls_last(),
+            col("headline").asc_nulls_last()
+        )
     )
 
-    parsed_df = bronze_df.withColumn(
-        "article",
-        from_json(col("raw_json"), article_schema)
+    ranked_df = identified_df.withColumn(
+        "row_number",
+        row_number().over(window_spec)
     )
 
-    news_df = parsed_df.select(
-        col("bronze_file"),
-        col("kafka_key"),
-        col("topic"),
-        col("partition"),
-        col("offset"),
-        col("kafka_ts"),
-        col("raw_json"),
-        col("article").isNull().alias("json_parse_failed"),
-        col("article.article_id").alias("article_id"),
-        col("article.published_at").alias("published_at"),
-        col("article.source").alias("source"),
-        col("article.headline").alias("headline"),
-        col("article.full_text").alias("full_text"),
-        col("article.url").alias("url"),
-        col("article.ingested_at").alias("ingested_at")
+    unique_new_df = (
+        ranked_df
+        .filter(col("row_number") == 1)
+        .drop("row_number")
     )
 
-    print("\nTotal new Bronze records:", news_df.count())
+    # Summary
+    incoming_count = news_df.count()
+    missing_count = missing_id_df.count()
+    unique_count = unique_new_df.count()
 
-    return news_df, new_files
+    already_processed_count = len(processed_ids)
+
+    print("Incoming records:", incoming_count)
+    print("Records with missing article IDs:", missing_count)
+    print("New unique articles:", unique_count)
+
+    print("\nArticle-level deduplication completed!")
+
+    return unique_new_df, missing_id_df
