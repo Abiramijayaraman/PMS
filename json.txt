@@ -1,246 +1,104 @@
 
 import json
-import shutil
-import re
 from pathlib import Path
 
 
 # --------------------------------------------------
-# 1. PROJECT PATHS
+# 1. CHECKPOINT PATHS
 # --------------------------------------------------
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-DATA_PATH = PROJECT_ROOT / "silver_news" / "data"
+CHECKPOINT_DIR = (
+    PROJECT_ROOT
+    / "silver_news"
+    / "data"
+    / "checkpoints"
+)
 
-STAGING_PATH = DATA_PATH / "_staging"
+PROCESSED_FILES_PATH = (
+    CHECKPOINT_DIR / "processed_files.json"
+)
 
-SILVER_PATH = DATA_PATH / "silver"
-
-NEWS_PATH = SILVER_PATH / "news"
-
-NEWS_BY_TICKER_PATH = SILVER_PATH / "news_by_ticker"
-
-DLQ_PATH = DATA_PATH / "processed" / "dead_letter"
-
-CHECKPOINT_PATH = DATA_PATH / "checkpoints"
-
-COMMITTED_BATCHES_PATH = CHECKPOINT_PATH / "committed_batches"
-
-
-# --------------------------------------------------
-# 2. CHECK WHETHER BATCH IS ALREADY COMMITTED
-# --------------------------------------------------
-
-def is_batch_committed(batch_id):
-
-    marker_path = (
-        COMMITTED_BATCHES_PATH
-        / f"{batch_id}.json"
-    )
-
-    return marker_path.exists()
+PROCESSED_ARTICLE_IDS_PATH = (
+    CHECKPOINT_DIR / "processed_article_ids.json"
+)
 
 
 # --------------------------------------------------
-# 3. WRITE A SPARK DATAFRAME TO STAGING
+# 2. LOAD CHECKPOINT
 # --------------------------------------------------
 
-def write_dataframe(dataframe, output_path):
+def load_checkpoint(checkpoint_path):
 
-    output_path.parent.mkdir(
+    checkpoint_path = Path(checkpoint_path)
+
+    if not checkpoint_path.exists():
+        return []
+
+    with open(checkpoint_path, "r", encoding="utf-8") as file:
+        return json.load(file)
+
+
+# --------------------------------------------------
+# 3. SAVE CHECKPOINT SAFELY
+# --------------------------------------------------
+
+def save_checkpoint(checkpoint_path, values):
+
+    checkpoint_path = Path(checkpoint_path)
+
+    checkpoint_path.parent.mkdir(
         parents=True,
         exist_ok=True
     )
 
-    (
-        dataframe.write
-        .mode("errorifexists")
-        .parquet(str(output_path))
-    )
+    temporary_path = checkpoint_path.with_suffix(".tmp")
 
-
-# --------------------------------------------------
-# 4. COMMIT BATCH MARKER
-# --------------------------------------------------
-
-def create_commit_marker(batch_id):
-
-    COMMITTED_BATCHES_PATH.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    marker_path = (
-        COMMITTED_BATCHES_PATH
-        / f"{batch_id}.json"
-    )
-
-    temporary_path = marker_path.with_suffix(".tmp")
-
-    marker_data = {
-        "batch_id": batch_id,
-        "status": "COMMITTED"
-    }
-
-    with open(
-        temporary_path,
-        "w",
-        encoding="utf-8"
-    ) as file:
-
+    with open(temporary_path, "w", encoding="utf-8") as file:
         json.dump(
-            marker_data,
+            sorted(set(values)),
             file,
             indent=4
         )
 
-    temporary_path.replace(marker_path)
+    # Replace the old checkpoint only after the new file is written.
+    temporary_path.replace(checkpoint_path)
 
 
 # --------------------------------------------------
-# 5. WRITE ALL BATCH OUTPUTS SAFELY
+# 4. PROCESSED BRONZE FILES
 # --------------------------------------------------
 
-def write_batch_outputs(
-    batch_id,
-    news_with_sentiment_df,
-    news_by_ticker_with_sentiment_df,
-    invalid_df
-):
+def load_processed_files():
 
-    print("\n========== SAFE BATCH WRITING ==========")
-
-    # Validate batch ID to keep paths predictable.
-    if not re.fullmatch(r"[A-Za-z0-9_-]+", batch_id):
-        raise ValueError("Invalid batch ID")
-
-    # Avoid writing a batch that is already committed.
-    if is_batch_committed(batch_id):
-
-        print("Batch already committed:", batch_id)
-
-        return False
-
-    # Each batch gets its own output directories.
-    staging_batch = STAGING_PATH / batch_id
-
-    final_news = NEWS_PATH / f"batch_id={batch_id}"
-
-    final_ticker = (
-        NEWS_BY_TICKER_PATH / f"batch_id={batch_id}"
+    return set(
+        load_checkpoint(PROCESSED_FILES_PATH)
     )
 
-    final_dlq = DLQ_PATH / f"batch_id={batch_id}"
 
-    final_paths = [
-        final_news,
-        final_ticker,
-        final_dlq
-    ]
+def save_processed_files(processed_files):
 
-    # Remove leftovers from an earlier incomplete attempt.
-    if staging_batch.exists():
-        shutil.rmtree(staging_batch)
-
-    for path in final_paths:
-        if path.exists():
-            shutil.rmtree(path)
-
-    staging_batch.mkdir(
-        parents=True,
-        exist_ok=True
+    save_checkpoint(
+        PROCESSED_FILES_PATH,
+        processed_files
     )
 
-    staged_news = staging_batch / "news"
 
-    staged_ticker = staging_batch / "news_by_ticker"
+# --------------------------------------------------
+# 5. PROCESSED ARTICLE IDS
+# --------------------------------------------------
 
-    staged_dlq = staging_batch / "dead_letter"
+def load_processed_article_ids():
 
-    try:
+    return set(
+        load_checkpoint(PROCESSED_ARTICLE_IDS_PATH)
+    )
 
-        # ------------------------------------------
-        # A. WRITE ARTICLE-LEVEL SILVER DATA
-        # ------------------------------------------
 
-        print("\nWriting article-level Silver data...")
+def save_processed_article_ids(article_ids):
 
-        write_dataframe(
-            news_with_sentiment_df,
-            staged_news
-        )
-
-        # ------------------------------------------
-        # B. WRITE TICKER-LEVEL SILVER DATA
-        # ------------------------------------------
-
-        print("\nWriting ticker-level Silver data...")
-
-        write_dataframe(
-            news_by_ticker_with_sentiment_df,
-            staged_ticker
-        )
-
-        # ------------------------------------------
-        # C. WRITE DEAD LETTER RECORDS
-        # ------------------------------------------
-
-        print("\nWriting DLQ records...")
-
-        write_dataframe(
-            invalid_df,
-            staged_dlq
-        )
-
-        # ------------------------------------------
-        # D. MOVE STAGED OUTPUTS TO FINAL PATHS
-        # ------------------------------------------
-
-        NEWS_PATH.mkdir(parents=True, exist_ok=True)
-
-        NEWS_BY_TICKER_PATH.mkdir(
-            parents=True,
-            exist_ok=True
-        )
-
-        DLQ_PATH.mkdir(parents=True, exist_ok=True)
-
-        staged_news.rename(final_news)
-
-        staged_ticker.rename(final_ticker)
-
-        staged_dlq.rename(final_dlq)
-
-        # ------------------------------------------
-        # E. COMMIT MARKER — LAST STEP
-        # ------------------------------------------
-
-        create_commit_marker(batch_id)
-
-        print("\n========================================")
-        print("BATCH COMMITTED SUCCESSFULLY")
-        print("========================================")
-
-        print("Batch ID:", batch_id)
-        print("News output:", final_news)
-        print("Ticker output:", final_ticker)
-        print("DLQ output:", final_dlq)
-
-        return True
-
-    except Exception:
-
-        # Remove partial outputs if the batch failed.
-        for path in final_paths:
-
-            if path.exists():
-                shutil.rmtree(path)
-
-        raise
-
-    finally:
-
-        # Remove remaining staging data.
-        if staging_batch.exists():
-            shutil.rmtree(staging_batch)
+    save_checkpoint(
+        PROCESSED_ARTICLE_IDS_PATH,
+        article_ids
+    )
