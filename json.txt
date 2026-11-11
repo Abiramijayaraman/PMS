@@ -1,58 +1,104 @@
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\tests\test_validate_news.py
-WARNING: Using incubator modules: jdk.incubator.vector
-26/11/11 23:52:41 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
-Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
-Setting default log level to "WARN".
-To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
-C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\testing\utils.py:127: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
-  require_minimum_pandas_version()
-26/11/11 23:52:42 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
 
-========== INPUT RECORDS ==========
-+----------+------------------------------------+-------------------------+-----------------+---------------------+
-|article_id|full_text                           |headline                 |json_parse_failed|url                  |
-+----------+------------------------------------+-------------------------+-----------------+---------------------+
-|TEST-001  |Reliance shares increased today.    |Reliance shares rise     |false            |https://example.com/1|
-|NULL      |TCS announces quarterly results.    |TCS announces results    |false            |https://example.com/2|
-|TEST-003  |Infosys announces quarterly results.|Infosys announces results|false            |NULL                 |
-|TEST-004  |NULL                                |NULL                     |false            |https://example.com/4|
-|TEST-005  |This record came from invalid JSON. |Invalid record           |true             |https://example.com/5|
-|NULL      |NULL                                |NULL                     |false            |NULL                 |
-+----------+------------------------------------+-------------------------+-----------------+---------------------+
+import json
+from pathlib import Path
 
 
-========== STARTING NEWS VALIDATION ==========
-                                                                                
-========== VALIDATION SUMMARY ==========
-Total candidate records: 6
-Valid records: 1
-Invalid records: 5
+# --------------------------------------------------
+# 1. CHECKPOINT PATHS
+# --------------------------------------------------
 
-Validation completed!
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-========== VALID RECORDS ==========
-+----------+--------------------------------+--------------------+-----------------+---------------------+-----------------+-----------------+
-|article_id|full_text                       |headline            |json_parse_failed|url                  |validation_reason|validation_status|
-+----------+--------------------------------+--------------------+-----------------+---------------------+-----------------+-----------------+
-|TEST-001  |Reliance shares increased today.|Reliance shares rise|false            |https://example.com/1|       |VALID            |
-+----------+--------------------------------+--------------------+-----------------+---------------------+-----------------+-----------------+
+CHECKPOINT_DIR = (
+    PROJECT_ROOT
+    / "silver_news"
+    / "data"
+    / "checkpoints"
+)
+
+PROCESSED_FILES_PATH = (
+    CHECKPOINT_DIR / "processed_files.json"
+)
+
+PROCESSED_ARTICLE_IDS_PATH = (
+    CHECKPOINT_DIR / "processed_article_ids.json"
+)
 
 
-========== DEAD LETTER RECORDS ==========
-+----------+---------------------------------------------------------------+-----------------+
-|article_id|validation_reason                                              |validation_status|
-+----------+---------------------------------------------------------------+-----------------+
-|NULL      |missing_article_id                                             |INVALID          |
-|TEST-003  |missing_url                                                    |INVALID          |
-|TEST-004  |missing_headline_and_full_text                                 |INVALID          |
-|TEST-005  |invalid_json                                                   |INVALID          |
-|NULL      |missing_article_id; missing_url; missing_headline_and_full_text|INVALID          |
-+----------+---------------------------------------------------------------+-----------------+
+# --------------------------------------------------
+# 2. LOAD CHECKPOINT
+# --------------------------------------------------
 
-                                                                                
-========================================
-NEWS VALIDATION TEST PASSED!
-========================================
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> SUCCESS: The process with PID 11628 (child process of PID 26084) has been terminated.
-SUCCESS: The process with PID 26084 (child process of PID 19616) has been terminated.
-SUCCESS: The process with PID 19616 (child process of PID 17588) has been terminated.
+def load_checkpoint(checkpoint_path):
+
+    checkpoint_path = Path(checkpoint_path)
+
+    if not checkpoint_path.exists():
+        return []
+
+    with open(checkpoint_path, "r", encoding="utf-8") as file:
+        return json.load(file)
+
+
+# --------------------------------------------------
+# 3. SAVE CHECKPOINT SAFELY
+# --------------------------------------------------
+
+def save_checkpoint(checkpoint_path, values):
+
+    checkpoint_path = Path(checkpoint_path)
+
+    checkpoint_path.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    temporary_path = checkpoint_path.with_suffix(".tmp")
+
+    with open(temporary_path, "w", encoding="utf-8") as file:
+        json.dump(
+            sorted(set(values)),
+            file,
+            indent=4
+        )
+
+    # Replace the old checkpoint only after the new file is written.
+    temporary_path.replace(checkpoint_path)
+
+
+# --------------------------------------------------
+# 4. PROCESSED BRONZE FILES
+# --------------------------------------------------
+
+def load_processed_files():
+
+    return set(
+        load_checkpoint(PROCESSED_FILES_PATH)
+    )
+
+
+def save_processed_files(processed_files):
+
+    save_checkpoint(
+        PROCESSED_FILES_PATH,
+        processed_files
+    )
+
+
+# --------------------------------------------------
+# 5. PROCESSED ARTICLE IDS
+# --------------------------------------------------
+
+def load_processed_article_ids():
+
+    return set(
+        load_checkpoint(PROCESSED_ARTICLE_IDS_PATH)
+    )
+
+
+def save_processed_article_ids(article_ids):
+
+    save_checkpoint(
+        PROCESSED_ARTICLE_IDS_PATH,
+        article_ids
+    )
