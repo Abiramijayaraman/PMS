@@ -1,77 +1,143 @@
 
-from pyspark.sql.functions import (
-    col,
-    regexp_replace,
-    trim,
-    coalesce,
-    lit,
-    when
+import os
+import sys
+
+# --------------------------------------------------
+# 1. CONFIGURE PYTHON FOR SPARK
+# --------------------------------------------------
+
+os.environ["PYSPARK_PYTHON"] = sys.executable
+os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
+
+from pyspark.sql import SparkSession
+
+from read_bronze import read_new_bronze
+from deduplicate_news import deduplicate_news
+from validate_news import validate_news
+from clean_news import clean_news
+
+
+# --------------------------------------------------
+# 2. CREATE SPARK SESSION
+# --------------------------------------------------
+
+spark = (
+    SparkSession.builder
+    .appName("IncrementalSilverNewsPipeline")
+    .master("local[*]")
+    .config("spark.sql.session.timeZone", "UTC")
+    .getOrCreate()
 )
 
+spark.sparkContext.setLogLevel("ERROR")
 
-# --------------------------------------------------
-# 1. HTML CLEANING
-# --------------------------------------------------
 
-def clean_news(news_df):
+try:
 
-    print("\n========== STARTING HTML CLEANING ==========")
+    print("\n========================================")
+    print("       SILVER NEWS PIPELINE")
+    print("========================================")
 
-    # Clean HTML from full_text.
-    cleaned_df = news_df.withColumn(
-        "cleaned_full_text",
-        regexp_replace(
-            coalesce(col("full_text"), lit("")),
-            r"<[^>]*>",
-            " "
+    # --------------------------------------------------
+    # 3. FILE-LEVEL INCREMENTAL BRONZE READING
+    # --------------------------------------------------
+
+    news_df, new_files = read_new_bronze(spark)
+
+    if news_df is None:
+
+        print("\nNo records available for processing.")
+
+    else:
+
+        # --------------------------------------------------
+        # 4. ARTICLE-LEVEL DEDUPLICATION
+        # --------------------------------------------------
+
+        unique_news_df, missing_id_df = deduplicate_news(news_df)
+
+        # Include missing-ID records for validation and DLQ.
+        candidates_df = unique_news_df.unionByName(
+            missing_id_df,
+            allowMissingColumns=True
         )
-    )
 
-    # Replace common HTML entities.
-    cleaned_df = cleaned_df.withColumn(
-        "cleaned_full_text",
-        regexp_replace(
-            col("cleaned_full_text"),
-            r"(?i)&nbsp;|&#160;|&amp;|&quot;|&#39;|&lt;|&gt;",
-            " "
-        )
-    )
+        print("\n========== DEDUPLICATED CANDIDATE RECORDS ==========")
 
-    # Normalize whitespace.
-    cleaned_df = cleaned_df.withColumn(
-        "cleaned_full_text",
-        trim(
-            regexp_replace(
-                col("cleaned_full_text"),
-                r"\s+",
-                " "
-            )
-        )
-    )
+        candidates_df.select(
+            "article_id",
+            "headline",
+            "bronze_file"
+        ).show(truncate=False)
 
-    # Clean headline separately.
-    cleaned_df = cleaned_df.withColumn(
-        "cleaned_headline",
-        trim(
-            regexp_replace(
-                coalesce(col("headline"), lit("")),
-                r"\s+",
-                " "
-            )
-        )
-    )
+        # --------------------------------------------------
+        # 5. VALIDATION
+        # --------------------------------------------------
 
-    # Prepare text for FinBERT.
-    # Prefer headline; use cleaned full_text as fallback.
-    cleaned_df = cleaned_df.withColumn(
-        "text_for_analysis",
-        when(
-            col("cleaned_headline") != "",
-            col("cleaned_headline")
-        ).otherwise(col("cleaned_full_text"))
-    )
+        valid_df, invalid_df = validate_news(candidates_df)
 
-    print("Input records:", news_df.count())
-    print("HTML cleaning completed.")
+        print("\n========== VALIDATION RESULTS ==========")
 
-    return cleaned_df
+        print("Valid records:", valid_df.count())
+        print("Invalid records:", invalid_df.count())
+
+        # --------------------------------------------------
+        # 6. HTML CLEANING
+        # --------------------------------------------------
+
+        cleaned_df = clean_news(valid_df)
+
+        print("\n========== CLEANED NEWS ==========")
+
+        cleaned_df.select(
+            "article_id",
+            "headline",
+            "cleaned_headline",
+            "full_text",
+            "cleaned_full_text",
+            "text_for_analysis"
+        ).show(truncate=False)
+
+        # --------------------------------------------------
+        # 7. DEAD-LETTER DISPLAY
+        # --------------------------------------------------
+
+        print("\n========== DEAD-LETTER RECORDS ==========")
+
+        invalid_df.select(
+            "article_id",
+            "validation_status",
+            "validation_reason",
+            "bronze_file",
+            "topic",
+            "partition",
+            "offset",
+            "raw_json"
+        ).show(truncate=False)
+
+        # --------------------------------------------------
+        # 8. PIPELINE SUMMARY
+        # --------------------------------------------------
+
+        print("\n========== PIPELINE SUMMARY ==========")
+
+        print("New Bronze files discovered:", len(new_files))
+        print("New unique articles:", unique_news_df.count())
+        print("Records with missing article IDs:", missing_id_df.count())
+        print("Valid records:", valid_df.count())
+        print("Invalid records:", invalid_df.count())
+        print("Cleaned records:", cleaned_df.count())
+
+        print("\nBRONZE READING, DEDUPLICATION, VALIDATION")
+        print("AND HTML CLEANING COMPLETED!")
+
+        # IMPORTANT:
+        # Parquet output persistence and checkpoint commits
+        # will be implemented after all Silver stages
+        # are integrated and tested.
+
+finally:
+
+    spark.stop()
+
+    print("\nSPARK SESSION STOPPED")
