@@ -1,16 +1,1216 @@
+# Silver News Layer – Real-Time Financial News Pipeline
 
-# Apache Spark
-pyspark==4.3.0
+## 1. Project Overview
 
-# Data processing and Parquet
-pandas>=2.2,<3.0
-pyarrow>=18,<25
-numpy>=1.26,<3.0
+The Silver News Layer is part of a Real-Time Financial News and Market Streaming Pipeline developed to process financial news articles collected from live news sources.
 
-# HTML cleaning
-beautifulsoup4>=4.12,<5.0
+The purpose of this layer is to transform raw Bronze news data into clean, validated, deduplicated, ticker-mapped and sentiment-enriched financial news records.
 
-# FinBERT sentiment analysis
-transformers>=4.45,<5.0
-torch>=2.7,<3.0
-safetensors>=0.4,<1.0
+The Silver layer uses Apache Spark for distributed data processing and FinBERT for financial sentiment analysis.
+
+### Main responsibilities
+
+1. Read raw financial news records from the Bronze layer.
+2. Identify newly received Bronze Parquet files.
+3. Avoid reprocessing previously completed files.
+4. Parse and validate incoming news records.
+5. Remove duplicate articles.
+6. Clean HTML tags and unnecessary text.
+7. Identify relevant NSE company tickers using configured aliases.
+8. Perform financial sentiment analysis using FinBERT.
+9. Generate article-level and ticker-level Silver outputs.
+10. Store invalid records separately in a Dead Letter Queue (DLQ).
+11. Maintain checkpoints to support incremental processing and recovery.
+
+---
+
+## 2. Overall Project Architecture
+
+The project follows a multi-layer data processing architecture.
+
+### Bronze Layer
+
+The Bronze layer receives raw financial news events from Kafka and stores them as Parquet files.
+
+The Bronze layer is handled by Member 1.
+
+The raw records contain Kafka metadata and the original news event in JSON format.
+
+### Silver News Layer
+
+The Silver News Layer is responsible for cleaning, validating, enriching and transforming the Bronze news data.
+
+This layer is implemented by Member 3.
+
+### Silver Ticks Layer
+
+The Silver Ticks Layer processes financial market tick data, including price validation and duplicate-price identification.
+
+This layer is handled by Member 2.
+
+### Gold Layer
+
+The Gold layer combines processed news information with market tick information to support downstream analysis.
+
+Member 4 is responsible for the Gold layer.
+
+The Silver News outputs are provided to Member 4 for further processing.
+
+---
+
+## 3. Technology Stack
+
+| Technology | Purpose |
+|---|---|
+| Python | Main programming language |
+| Apache Spark (PySpark) | Data processing and transformations |
+| Java JDK 17 | Runtime required by Spark |
+| PyArrow | Reading and writing Parquet files |
+| Pandas | Data conversion and intermediate processing |
+| BeautifulSoup | HTML cleaning |
+| Hugging Face Transformers | Loading the FinBERT model |
+| PyTorch | Running FinBERT inference |
+| FinBERT | Financial sentiment analysis |
+| JSON | Configuration and checkpoint storage |
+| Parquet | Columnar data storage |
+
+### Why Apache Spark?
+
+Apache Spark is used to process news records through structured DataFrame transformations.
+
+It supports:
+
+- Reading and transforming structured data.
+- Filtering and deduplicating records.
+- Applying validation rules.
+- Processing records using DataFrame operations.
+- Preparing article-level and ticker-level datasets.
+
+The pipeline uses a local Spark session with `local[*]` for development and testing.
+
+This allows Spark to use the available CPU cores on the development machine.
+
+### Why PyArrow?
+
+The project uses PyArrow for Parquet file writing.
+
+During development on Windows, Spark's native Parquet writer encountered a Hadoop configuration error because `HADOOP_HOME` and `winutils.exe` were unavailable.
+
+To avoid requiring a separate Hadoop Windows installation for output writing, the output writer converts Spark DataFrames to Pandas and writes Parquet files using PyArrow.
+
+Note: The current implementation uses `toPandas()`, which collects the DataFrame into driver memory. This is suitable for the small development batches tested so far. For larger production workloads, the output-writing approach should be redesigned to avoid collecting entire datasets into memory.
+
+---
+
+## 4. Project Folder Structure
+
+The Silver News project follows this structure:
+
+```text
+financial-news-pipeline/
+│
+├── requirements.txt
+├── README.md
+│
+└── silver_news/
+    │
+    ├── config/
+    │   └── company_aliases.json
+    │
+    ├── models/
+    │   └── finbert/
+    │       ├── config.json
+    │       ├── model.safetensors
+    │       ├── tokenizer_config.json
+    │       ├── special_tokens_map.json
+    │       └── vocab.txt
+    │
+    ├── data/
+    │   │
+    │   ├── actual_bronze/
+    │   │   └── news/
+    │   │       └── *.parquet
+    │   │
+    │   ├── silver/
+    │   │   ├── news/
+    │   │   └── news_by_ticker/
+    │   │
+    │   ├── processed/
+    │   │   └── dead_letter/
+    │   │
+    │   ├── checkpoints/
+    │   │   ├── processed_files.json
+    │   │   ├── processed_article_ids.json
+    │   │   └── committed_batches/
+    │   │
+    │   └── _staging/
+    │
+    └── src/
+        ├── read_bronze.py
+        ├── validate_news.py
+        ├── deduplicate_news.py
+        ├── clean_news.py
+        ├── extract_tickers.py
+        ├── sentiment_analysis.py
+        ├── write_silver_outputs.py
+        ├── write_dead_letter.py
+        ├── checkpoint_manager.py
+        ├── safe_output_writer.py
+        └── run_silver_pipeline.py
+```
+
+The `data/silver`, `data/processed`, `data/checkpoints` and `data/_staging` directories are created or populated by the pipeline as required.
+
+---
+
+## 5. Bronze Input Data
+
+The Silver News Layer reads Bronze Parquet files from:
+
+```text
+silver_news/data/actual_bronze/news/
+```
+
+Each Bronze Parquet file contains Kafka metadata and a raw JSON news event.
+
+### Bronze schema
+
+| Field | Description |
+|---|---|
+| kafka_key | Kafka message key |
+| raw_json | Original news event in JSON format |
+| topic | Kafka topic |
+| partition | Kafka partition number |
+| offset | Kafka message offset |
+| kafka_ts | Kafka timestamp |
+
+### Raw news JSON fields
+
+The `raw_json` field contains the news article information:
+
+| Field | Description |
+|---|---|
+| article_id | Unique article identifier |
+| published_at | News publication timestamp |
+| source | News source |
+| headline | Original article headline |
+| full_text | Available article text or HTML content |
+| url | Original news article URL |
+| ingested_at | Time the record was ingested |
+
+### Bronze file generation
+
+The Bronze layer creates Parquet files when new news records are available.
+
+Each generated file contains newly collected records from that Kafka batch.
+
+Previously generated Bronze files remain unchanged.
+
+If no new news messages are available, a new Parquet file may not be generated.
+
+The Silver layer therefore processes only newly discovered files.
+
+---
+
+## 6. Silver News Processing Workflow
+
+The complete processing workflow is:
+
+```text
+Bronze Parquet Files
+        |
+        v
+Discover New Files
+        |
+        v
+File-Level Incremental Filtering
+        |
+        v
+Read and Parse Raw JSON
+        |
+        v
+Article-Level Deduplication
+        |
+        v
+News Validation
+        |
+        +----------------------+
+        |                      |
+        v                      v
+Valid Records             Invalid Records
+        |                      |
+        v                      v
+HTML Cleaning             Dead Letter Queue
+        |
+        v
+Ticker Extraction
+        |
+        v
+FinBERT Sentiment Analysis
+        |
+        +--------------------------+
+        |                          |
+        v                          v
+Article-Level Output       Ticker-Level Output
+        |                          |
+        v                          v
+   silver/news             silver/news_by_ticker
+        |
+        v
+Safe Batch Commit
+        |
+        v
+Update Checkpoints
+```
+
+### Step 1: Bronze File Discovery
+
+**Module:** `read_bronze.py`
+
+The module discovers all available Bronze Parquet files from the configured input directory.
+
+It compares the available files with the previously processed file list.
+
+Only new files are selected.
+
+The PyArrow library reads the Bronze Parquet files and adds the source filename as `bronze_file` metadata.
+
+The raw JSON field is then parsed into structured news columns using Spark.
+
+Malformed JSON records are retained with a parsing-failure indicator so they can be handled by validation and DLQ processing.
+
+### Step 2: Incremental File Filtering
+
+**Modules:** `read_bronze.py`, `checkpoint_manager.py`
+
+The pipeline maintains a file-level checkpoint:
+
+```text
+silver_news/data/checkpoints/processed_files.json
+```
+
+This file stores the names of successfully processed Bronze Parquet files.
+
+Before processing, the pipeline compares the available Bronze files with this checkpoint.
+
+Example:
+
+Available Bronze files:
+
+```text
+news_001.parquet
+news_002.parquet
+news_003.parquet
+```
+
+Previously processed files:
+
+```text
+news_001.parquet
+news_002.parquet
+```
+
+New files selected:
+
+```text
+news_003.parquet
+```
+
+The first two files are skipped because they were already successfully processed.
+
+### Step 3: Article-Level Deduplication
+
+**Module:** `deduplicate_news.py`
+
+File-level filtering alone is not sufficient because the same article may appear in different Bronze files.
+
+Therefore, a second deduplication mechanism is implemented at article level.
+
+The pipeline uses `article_id` as the unique identifier.
+
+It checks the incoming records against:
+
+```text
+silver_news/data/checkpoints/processed_article_ids.json
+```
+
+The module also removes duplicate article IDs within the current batch.
+
+When multiple records have the same article ID, the implementation selects one record using the configured ordering based on ingestion time and other available fields.
+
+Records without an article ID are separated so they can be sent through validation and handled as invalid records.
+
+The deduplication process avoids repeatedly running cleaning, ticker extraction and FinBERT for previously processed articles.
+
+### Step 4: News Validation
+
+**Module:** `validate_news.py`
+
+Incoming records are validated before further processing.
+
+The validation checks include:
+
+- Article ID availability.
+- URL availability.
+- Headline or full-text availability.
+- JSON parsing failures.
+
+Each record receives a validation status:
+
+```text
+VALID
+INVALID
+```
+
+Invalid records are assigned a validation reason explaining why they were rejected.
+
+The validation module returns two DataFrames:
+
+- Valid news records.
+- Invalid news records.
+
+Invalid records are routed to the Dead Letter Queue.
+
+### Step 5: HTML Cleaning
+
+**Module:** `clean_news.py`
+
+News records may contain HTML tags, links, HTML entities and unnecessary whitespace.
+
+BeautifulSoup is used to remove HTML markup and extract readable text.
+
+The cleaning process creates:
+
+- `cleaned_headline`
+- `cleaned_full_text`
+- `text_for_analysis`
+
+The cleaned headline is preferred for sentiment analysis.
+
+The cleaned full text is used as a fallback when the headline is unavailable.
+
+### Step 6: Ticker Extraction
+
+**Module:** `extract_tickers.py`
+
+The ticker extraction module identifies the companies mentioned in each news article.
+
+It uses the configured aliases stored in:
+
+```text
+silver_news/config/company_aliases.json
+```
+
+Example:
+
+```json
+{
+    "RELIANCE": [
+        "Reliance",
+        "Reliance Industries",
+        "RIL"
+    ],
+    "HDFCBANK": [
+        "HDFC Bank"
+    ],
+    "ICICIBANK": [
+        "ICICI Bank"
+    ],
+    "TCS": [
+        "Tata Consultancy Services",
+        "TCS"
+    ]
+}
+```
+
+The configuration contains aliases for the supported NSE companies.
+
+The module uses text matching to identify the relevant company tickers.
+
+It generates:
+
+1. An article-level DataFrame containing the matched ticker list.
+2. A ticker-level DataFrame containing one record per article-ticker combination.
+
+For example:
+
+An article mentioning Reliance Industries and HDFC Bank generates:
+
+| article_id | ticker |
+|---|---|
+| A001 | RELIANCE |
+| A001 | HDFCBANK |
+
+An article mentioning only Tata Steel generates:
+
+| article_id | ticker |
+|---|---|
+| A002 | TATASTEEL |
+
+Articles without matching tickers are retained in the article-level dataset.
+
+### Step 7: FinBERT Sentiment Analysis
+
+**Module:** `sentiment_analysis.py`
+
+FinBERT is used to identify the financial sentiment expressed in each news article.
+
+The model used is:
+
+```text
+ProsusAI/finbert
+```
+
+The model is loaded locally from:
+
+```text
+silver_news/models/finbert/
+```
+
+The implementation reads the sentiment label mapping from the model configuration instead of assuming a fixed label order.
+
+The configured labels are:
+
+```text
+positive
+negative
+neutral
+```
+
+The model generates probability scores for all three sentiment classes.
+
+The pipeline processes articles in batches rather than loading and running the model separately for each article.
+
+The current batch size is 8.
+
+The sentiment output includes:
+
+| Field | Description |
+|---|---|
+| sentiment | Predicted sentiment label |
+| positive_score | Positive probability |
+| negative_score | Negative probability |
+| neutral_score | Neutral probability |
+| sentiment_score | Positive score minus negative score |
+
+The sentiment score is calculated as:
+
+```text
+sentiment_score = positive_score - negative_score
+```
+
+Interpretation:
+
+- Positive score: sentiment leans positive.
+- Negative score: sentiment leans negative.
+- Score close to zero: sentiment is relatively neutral or balanced.
+
+Sentiment is calculated once per unique article and then attached to the corresponding ticker-level records using `article_id`.
+
+**Important limitation:** In the actual Bronze data tested during development, the `full_text` field contained headline/link HTML rather than complete article bodies. Therefore, the current sentiment results are effectively headline-based. They should not be interpreted as full-article sentiment.
+
+### Step 8: Writing Silver Outputs
+
+**Module:** `safe_output_writer.py`
+
+The processed records are written as Parquet files.
+
+The pipeline produces three output categories.
+
+#### A. Article-Level Silver Output
+
+Location:
+
+```text
+silver_news/data/silver/news/
+```
+
+Contains one record per unique processed article.
+
+It includes article information, cleaned text, matched tickers and sentiment fields.
+
+#### B. Ticker-Level Silver Output
+
+Location:
+
+```text
+silver_news/data/silver/news_by_ticker/
+```
+
+Contains one record for each article-ticker combination.
+
+For example, an article mentioning two companies generates two ticker-level records.
+
+This output is useful for the Gold layer because market information can be joined to the relevant ticker.
+
+#### C. Dead Letter Queue
+
+Location:
+
+```text
+silver_news/data/processed/dead_letter/
+```
+
+Contains records that fail validation or cannot be processed as valid news.
+
+Each rejected record includes its validation information and rejection reason.
+
+Even when there are no invalid records, the current implementation writes an empty DLQ Parquet output for the batch.
+
+---
+
+## 7. Safe Batch Writing and Recovery
+
+**Modules:** `safe_output_writer.py`, `checkpoint_manager.py`
+
+The pipeline uses a batch-based output-writing process.
+
+Each batch is assigned a deterministic batch ID generated from the Bronze filenames.
+
+Example:
+
+```text
+batch_c2b88c1be7eec104
+```
+
+Before final output directories are committed, the pipeline writes the records into a staging directory:
+
+```text
+silver_news/data/_staging/
+```
+
+After the output files are written successfully, the staged outputs are moved to their final locations.
+
+The pipeline then creates a commit marker:
+
+```text
+silver_news/data/checkpoints/committed_batches/
+```
+
+The commit marker stores:
+
+- Batch ID.
+- Batch status.
+- Bronze files included in the batch.
+- Processed article IDs.
+
+The marker is created after the output-writing operations complete.
+
+During recovery, the pipeline checks committed batch markers and restores the file-level and article-level checkpoints.
+
+This helps avoid reprocessing a batch that has already been committed.
+
+Note: This is a recovery mechanism implemented using output directories, marker files and JSON checkpoints. It is not a fully transactional database commit across all output locations.
+
+---
+
+## 8. Checkpoint Management
+
+The pipeline uses two main checkpoint files.
+
+### A. Processed Files Checkpoint
+
+```text
+silver_news/data/checkpoints/processed_files.json
+```
+
+Stores successfully processed Bronze filenames.
+
+Example:
+
+```json
+[
+    "news_001.parquet",
+    "news_002.parquet"
+]
+```
+
+### B. Processed Article IDs Checkpoint
+
+```text
+silver_news/data/checkpoints/processed_article_ids.json
+```
+
+Stores successfully committed article IDs.
+
+Example:
+
+```json
+[
+    "article_id_001",
+    "article_id_002"
+]
+```
+
+These two checkpoints serve different purposes:
+
+- File-level checkpoint prevents reading previously completed Bronze files again.
+- Article-level checkpoint prevents processing an already processed article if it appears in a newly generated Bronze file.
+
+Both checkpoints are updated only after the batch has been successfully committed.
+
+---
+
+## 9. Incremental Processing: What Happens When the Pipeline Runs Again?
+
+Incremental processing is an important feature of the Silver News Layer.
+
+The pipeline does not repeatedly process all historical Bronze files.
+
+### Scenario 1: First execution
+
+Assume the input directory contains:
+
+```text
+news_001.parquet
+news_002.parquet
+```
+
+The processed file checkpoint is empty.
+
+The pipeline processes both files.
+
+After a successful commit:
+
+```text
+processed_files.json
+```
+
+contains:
+
+```json
+[
+    "news_001.parquet",
+    "news_002.parquet"
+]
+```
+
+The processed article IDs are also saved.
+
+### Scenario 2: Running the pipeline again without new data
+
+Run:
+
+```powershell
+python .\silver_news\src\run_silver_pipeline.py
+```
+
+The pipeline discovers the same two Bronze files.
+
+It compares them with the processed file checkpoint.
+
+Expected result:
+
+```text
+Total Bronze files: 2
+Previously processed files: 2
+New files to process: 0
+```
+
+No new articles are processed.
+
+FinBERT does not run again.
+
+No new Silver batch is generated.
+
+### Scenario 3: A new Bronze file arrives
+
+Suppose Member 1 generates another file:
+
+```text
+news_003.parquet
+```
+
+The input directory now contains:
+
+```text
+news_001.parquet
+news_002.parquet
+news_003.parquet
+```
+
+The processed file checkpoint still contains only:
+
+```text
+news_001.parquet
+news_002.parquet
+```
+
+The pipeline selects only:
+
+```text
+news_003.parquet
+```
+
+It processes the newly arrived records and updates the checkpoints after a successful commit.
+
+### Scenario 4: An existing article appears in a new file
+
+Suppose `news_003.parquet` contains an article whose `article_id` was already processed in `news_001.parquet`.
+
+The file is new, so it is read.
+
+However, article-level deduplication identifies the previously processed article ID and skips it.
+
+Only genuinely new article IDs continue to validation and sentiment analysis.
+
+### Scenario 5: A batch fails before commit
+
+If output writing fails before the commit marker is created, the batch should remain eligible for retry.
+
+The safe writer attempts to remove incomplete staging and partial output directories.
+
+On the next execution, the batch can be attempted again.
+
+The commit marker and checkpoint recovery mechanism are used to distinguish successfully committed batches from incomplete ones.
+
+---
+
+## 10. Important: Sharing Existing Parquet Files and Checkpoints
+
+When sharing this project with another team member, distinguish between input data and generated data.
+
+### Files that should be retained
+
+| Folder | Reason |
+|---|---|
+| `data/actual_bronze/news/` | Required Bronze input data |
+| `config/` | Required company aliases |
+| `src/` | Pipeline implementation |
+
+The locally stored FinBERT model must also be supplied separately or made available at the expected model path.
+
+### Generated files
+
+| Folder | Recommendation |
+|---|---|
+| `data/silver/` | Generated Silver outputs; exclude for a clean first run |
+| `data/processed/` | Generated DLQ outputs; exclude for a clean first run |
+| `data/_staging/` | Temporary files; exclude |
+| `data/checkpoints/` | Existing processing history; exclude for a clean first run |
+
+### If existing checkpoints are included
+
+If the project is shared with the existing checkpoints from the development machine, the pipeline will identify the included Bronze files as already processed.
+
+It may report:
+
+```text
+Previously processed files: 2
+New files to process: 0
+```
+
+This is expected incremental-processing behaviour, not a pipeline failure.
+
+### If Bronze data is retained but checkpoints are excluded
+
+The pipeline will treat the included Bronze files as new.
+
+It will process them again and generate fresh Silver outputs.
+
+For a clean first execution on another laptop, retain the Bronze Parquet files and exclude generated outputs and checkpoints.
+
+Do not delete the original Bronze input files.
+
+---
+
+## 11. Installation and Environment Setup
+
+The following instructions are for Windows and PowerShell.
+
+### Prerequisites
+
+Install:
+
+1. Python 3.11 (recommended for the shared development environment).
+2. Java JDK 17.
+3. Visual Studio Code.
+4. Git.
+
+Verify Python:
+
+```powershell
+python --version
+```
+
+Verify Java:
+
+```powershell
+java -version
+```
+
+Verify Git:
+
+```powershell
+git --version
+```
+
+### Step 1: Open the project
+
+Open the project root folder in VS Code.
+
+The terminal should be positioned at:
+
+```text
+financial-news-pipeline/
+```
+
+### Step 2: Create a virtual environment
+
+```powershell
+python -m venv venv
+```
+
+Activate it:
+
+```powershell
+.\venv\Scripts\Activate.ps1
+```
+
+If PowerShell blocks activation, use the appropriate execution policy allowed on your machine or activate the environment through the VS Code terminal settings.
+
+### Step 3: Upgrade pip
+
+```powershell
+python -m pip install --upgrade pip
+```
+
+### Step 4: Install dependencies
+
+```powershell
+pip install -r requirements.txt
+```
+
+The virtual environment should be created separately on every developer's laptop.
+
+Do not copy another developer's `venv` folder.
+
+### Step 5: Configure the FinBERT model
+
+The code expects the local model at:
+
+```text
+silver_news/models/finbert/
+```
+
+The folder must contain the required model and tokenizer files, including:
+
+- `config.json`
+- `model.safetensors`
+- `tokenizer_config.json`
+- `special_tokens_map.json`
+- `vocab.txt`
+
+The model used during development is `ProsusAI/finbert`.
+
+The model's licence is CC BY-NC-SA 4.0. Commercial or company use requires an appropriate licence review and approval.
+
+The model is not installed by `pip install -r requirements.txt`.
+
+If the model is not supplied with the project, it must be obtained and configured separately at the expected path before running sentiment analysis.
+
+### Step 6: Place the Bronze files
+
+Place the input Bronze Parquet files in:
+
+```text
+silver_news/data/actual_bronze/news/
+```
+
+Make sure the folder contains the required `.parquet` files.
+
+The current reader uses this configured path. If your Bronze input location differs, update the path in `read_bronze.py`.
+
+---
+
+## 12. Running the Silver News Pipeline
+
+Run the following command from the project root after activating the virtual environment:
+
+```powershell
+python .\silver_news\src\run_silver_pipeline.py
+```
+
+The main runner coordinates the complete workflow.
+
+It performs:
+
+1. Spark session initialization.
+2. Checkpoint recovery.
+3. Bronze file discovery and reading.
+4. Article-level deduplication.
+5. Validation.
+6. HTML cleaning.
+7. Ticker extraction.
+8. FinBERT sentiment analysis.
+9. Safe batch output writing.
+10. Checkpoint updates.
+11. Spark session shutdown.
+
+The Python executable is configured for Spark workers using the current virtual environment's Python interpreter.
+
+---
+
+## 13. Expected Output Locations
+
+After a successful run, the generated output structure will look like:
+
+```text
+silver_news/
+└── data/
+    │
+    ├── silver/
+    │   ├── news/
+    │   │   └── batch_id=<batch_id>/
+    │   │       └── part-00000.parquet
+    │   │
+    │   └── news_by_ticker/
+    │       └── batch_id=<batch_id>/
+    │           └── part-00000.parquet
+    │
+    ├── processed/
+    │   └── dead_letter/
+    │       └── batch_id=<batch_id>/
+    │           └── part-00000.parquet
+    │
+    └── checkpoints/
+        ├── processed_files.json
+        ├── processed_article_ids.json
+        └── committed_batches/
+            └── <batch_id>.json
+```
+
+The batch ID identifies the Bronze files included in that processing batch.
+
+Each successful batch is stored in its own output directory.
+
+---
+
+## 14. Development Test Results
+
+The implementation was tested using actual Bronze Parquet files collected from the Bronze layer.
+
+### Actual input
+
+| Metric | Result |
+|---|---:|
+| Bronze Parquet files | 2 |
+| Total Bronze records | 14 |
+| Unique articles | 14 |
+
+### Processing results
+
+| Stage | Result |
+|---|---:|
+| Valid articles | 14 |
+| Invalid articles | 0 |
+| Articles with tickers | 14 |
+| Articles without tickers | 0 |
+| Article-ticker mappings | 16 |
+| Articles processed by FinBERT | 14 |
+| Article-level output records | 14 |
+| Ticker-level output records | 16 |
+| DLQ records | 0 |
+
+### Successful batch
+
+```text
+batch_c2b88c1be7eec104
+```
+
+The following outputs were successfully generated:
+
+- Article-level Silver Parquet output.
+- Ticker-level Silver Parquet output.
+- Empty DLQ Parquet output.
+- Processed-file checkpoint.
+- Processed-article-ID checkpoint.
+- Batch commit marker.
+
+The pipeline completed successfully and the Spark session was stopped.
+
+These results describe the tested development batch, not a guarantee of identical results for future input data.
+
+---
+
+## 15. Troubleshooting
+
+### Issue 1: ModuleNotFoundError
+
+Example:
+
+```text
+ModuleNotFoundError: No module named 'pyspark'
+```
+
+Solution:
+
+Activate the virtual environment and install the dependencies:
+
+```powershell
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+### Issue 2: Java not found
+
+Example:
+
+```text
+JAVA_HOME is not set
+```
+
+Solution:
+
+Install Java JDK 17 and configure `JAVA_HOME` and the Java `bin` directory in the system PATH.
+
+Restart the terminal and verify:
+
+```powershell
+java -version
+```
+
+### Issue 3: FinBERT model not found
+
+Example:
+
+```text
+OSError: Can't load the model
+```
+
+Solution:
+
+Verify that the local model folder exists:
+
+```text
+silver_news/models/finbert/
+```
+
+Check that the required model and tokenizer files are present.
+
+### Issue 4: Missing Bronze files
+
+If the pipeline reports that there are no Bronze files to process, verify the configured input folder:
+
+```text
+silver_news/data/actual_bronze/news/
+```
+
+Check that it contains `.parquet` files.
+
+### Issue 5: Spark Python worker error
+
+If Spark cannot find the Python worker executable, ensure that the pipeline sets the Python executable before creating the Spark session.
+
+The main runner should configure:
+
+```python
+import os
+import sys
+
+os.environ["PYSPARK_PYTHON"] = sys.executable
+os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
+```
+
+### Issue 6: Windows Hadoop warning
+
+Spark may display a warning about missing `winutils.exe` or `HADOOP_HOME`.
+
+The current output writer uses PyArrow rather than Spark's native Parquet writer to avoid the Windows Hadoop output-writing issue encountered during development.
+
+The warning itself does not necessarily indicate that the pipeline has failed.
+
+Always check the final pipeline execution status.
+
+### Issue 7: Pipeline reports zero new files
+
+If the pipeline reports:
+
+```text
+New files to process: 0
+```
+
+Check:
+
+```text
+silver_news/data/checkpoints/processed_files.json
+```
+
+The Bronze files may already have been processed.
+
+If a fresh test is intentionally required, back up and reset the generated output and checkpoint state together. Do not delete the Bronze input data.
+
+Never reset checkpoints while retaining conflicting committed output directories without first reconciling them.
+
+---
+
+## 16. Current Implementation Limitations and Future Improvements
+
+The current implementation is a working development version. The following improvements can be considered in later iterations:
+
+1. Improve ticker alias matching to avoid false positives.
+2. Obtain full article text where available instead of relying on headline-based sentiment.
+3. Add more robust duplicate detection beyond `article_id`.
+4. Improve output writing for large datasets without collecting all records using `toPandas()`.
+5. Integrate the Silver News output with the Gold layer.
+6. Improve batch commit and recovery mechanisms for production-grade reliability.
+7. Add monitoring and processing metrics.
+8. Add automated tests for new Bronze files, overlapping article IDs, invalid records and retry scenarios.
+
+---
+
+## 17. Responsibilities and Integration with the Gold Layer
+
+The Silver News Layer provides the Gold layer with cleaned and enriched financial news records.
+
+### Article-level dataset
+
+Contains:
+
+- Article ID.
+- Publication timestamp.
+- Source.
+- Headline.
+- Cleaned article text.
+- URL.
+- Matched tickers.
+- Sentiment label.
+- Sentiment probability scores.
+- Sentiment score.
+
+### Ticker-level dataset
+
+Contains one record for every article-ticker relationship.
+
+This is the primary news dataset for ticker-based downstream processing.
+
+Member 4 can use the ticker-level output to combine news sentiment with market tick data from the Silver Ticks Layer.
+
+The `article_id`, ticker and available event timestamps should be considered when designing the Gold layer joins.
+
+The final Gold implementation should agree on the common schema, timestamp conventions, output format and join rules with the Silver News and Silver Ticks owners.
+
+---
+
+## 18. Final Execution Checklist
+
+Before running the project on a new laptop:
+
+- [ ] Python is installed.
+- [ ] Java JDK 17 is installed.
+- [ ] Project files are available.
+- [ ] Virtual environment is created and activated.
+- [ ] Dependencies are installed.
+- [ ] FinBERT model is available at the configured path.
+- [ ] Company alias configuration is available.
+- [ ] Bronze Parquet files are placed in the correct input directory.
+- [ ] Checkpoint state is appropriate for the intended run.
+- [ ] The pipeline is executed from the project root.
+
+### Run command
+
+```powershell
+python .\silver_news\src\run_silver_pipeline.py
+```
+
+**End of Silver News Layer documentation.**
