@@ -1,13 +1,39 @@
 
+import os
+import sys
 import json
 from pathlib import Path
+from datetime import timezone
+
+import pyarrow.parquet as pq
+
+os.environ["PYSPARK_PYTHON"] = sys.executable
+os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
+
+from pyspark.sql.functions import col, from_json
+from pyspark.sql.types import (
+    StructType,
+    StructField,
+    StringType,
+    IntegerType,
+    LongType,
+    TimestampType
+)
 
 
 # --------------------------------------------------
-# 1. CHECKPOINT PATHS
+# 1. PROJECT PATHS
 # --------------------------------------------------
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+BRONZE_PATH = (
+    PROJECT_ROOT
+    / "silver_news"
+    / "data"
+    / "actual_bronze"
+    / "news"
+)
 
 CHECKPOINT_DIR = (
     PROJECT_ROOT
@@ -16,89 +42,159 @@ CHECKPOINT_DIR = (
     / "checkpoints"
 )
 
-PROCESSED_FILES_PATH = (
-    CHECKPOINT_DIR / "processed_files.json"
-)
-
-PROCESSED_ARTICLE_IDS_PATH = (
-    CHECKPOINT_DIR / "processed_article_ids.json"
-)
+PROCESSED_FILES_PATH = CHECKPOINT_DIR / "processed_files.json"
 
 
 # --------------------------------------------------
-# 2. LOAD CHECKPOINT
+# 2. SCHEMAS
 # --------------------------------------------------
 
-def load_checkpoint(checkpoint_path):
+bronze_schema = StructType([
+    StructField("kafka_key", StringType(), True),
+    StructField("raw_json", StringType(), True),
+    StructField("topic", StringType(), True),
+    StructField("partition", IntegerType(), True),
+    StructField("offset", LongType(), True),
+    StructField("kafka_ts", TimestampType(), True),
+    StructField("bronze_file", StringType(), True)
+])
 
-    checkpoint_path = Path(checkpoint_path)
-
-    if not checkpoint_path.exists():
-        return []
-
-    with open(checkpoint_path, "r", encoding="utf-8") as file:
-        return json.load(file)
-
-
-# --------------------------------------------------
-# 3. SAVE CHECKPOINT SAFELY
-# --------------------------------------------------
-
-def save_checkpoint(checkpoint_path, values):
-
-    checkpoint_path = Path(checkpoint_path)
-
-    checkpoint_path.parent.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    temporary_path = checkpoint_path.with_suffix(".tmp")
-
-    with open(temporary_path, "w", encoding="utf-8") as file:
-        json.dump(
-            sorted(set(values)),
-            file,
-            indent=4
-        )
-
-    # Replace the old checkpoint only after the new file is written.
-    temporary_path.replace(checkpoint_path)
+article_schema = StructType([
+    StructField("article_id", StringType(), True),
+    StructField("published_at", StringType(), True),
+    StructField("source", StringType(), True),
+    StructField("headline", StringType(), True),
+    StructField("full_text", StringType(), True),
+    StructField("url", StringType(), True),
+    StructField("ingested_at", StringType(), True)
+])
 
 
 # --------------------------------------------------
-# 4. PROCESSED BRONZE FILES
+# 3. LOAD FILE CHECKPOINT
 # --------------------------------------------------
 
 def load_processed_files():
 
-    return set(
-        load_checkpoint(PROCESSED_FILES_PATH)
-    )
+    if not PROCESSED_FILES_PATH.exists():
+        return set()
 
-
-def save_processed_files(processed_files):
-
-    save_checkpoint(
+    with open(
         PROCESSED_FILES_PATH,
-        processed_files
-    )
+        "r",
+        encoding="utf-8"
+    ) as file:
+
+        data = json.load(file)
+
+    return set(data.get("processed_files", []))
 
 
 # --------------------------------------------------
-# 5. PROCESSED ARTICLE IDS
+# 4. DISCOVER NEW BRONZE FILES
 # --------------------------------------------------
 
-def load_processed_article_ids():
+def discover_new_files():
 
-    return set(
-        load_checkpoint(PROCESSED_ARTICLE_IDS_PATH)
+    if not BRONZE_PATH.exists():
+        raise FileNotFoundError(
+            f"Bronze folder not found: {BRONZE_PATH}"
+        )
+
+    all_files = sorted(BRONZE_PATH.glob("*.parquet"))
+
+    processed_files = load_processed_files()
+
+    new_files = [
+        file for file in all_files
+        if file.name not in processed_files
+    ]
+
+    print("\n========== INCREMENTAL FILE CHECK ==========")
+
+    print("Total Bronze files:", len(all_files))
+    print("Previously processed files:", len(processed_files))
+    print("New files to process:", len(new_files))
+
+    for file in new_files:
+        print("NEW:", file.name)
+
+    for file in all_files:
+        if file.name in processed_files:
+            print("SKIPPED:", file.name)
+
+    return new_files
+
+
+# --------------------------------------------------
+# 5. READ AND PARSE NEW BRONZE FILES
+# --------------------------------------------------
+
+def read_new_bronze(spark):
+
+    new_files = discover_new_files()
+
+    if not new_files:
+        print("\nNo new Bronze files found.")
+        return None, []
+
+    records = []
+
+    for parquet_file in new_files:
+
+        print(f"\nReading: {parquet_file.name}")
+
+        arrow_table = pq.read_table(parquet_file)
+        file_records = arrow_table.to_pylist()
+
+        for record in file_records:
+
+            record["bronze_file"] = parquet_file.name
+
+            timestamp = record.get("kafka_ts")
+
+            if timestamp is not None and timestamp.tzinfo is not None:
+                record["kafka_ts"] = (
+                    timestamp.astimezone(timezone.utc)
+                    .replace(tzinfo=None)
+                )
+
+        print("Records in file:", len(file_records))
+
+        records.extend(file_records)
+
+    if not records:
+        print("\nNew files contain no records.")
+        return None, new_files
+
+    bronze_df = spark.createDataFrame(
+        records,
+        schema=bronze_schema
     )
 
-
-def save_processed_article_ids(article_ids):
-
-    save_checkpoint(
-        PROCESSED_ARTICLE_IDS_PATH,
-        article_ids
+    parsed_df = bronze_df.withColumn(
+        "article",
+        from_json(col("raw_json"), article_schema)
     )
+
+    news_df = parsed_df.select(
+        col("bronze_file"),
+        col("kafka_key"),
+        col("topic"),
+        col("partition"),
+        col("offset"),
+        col("kafka_ts"),
+        col("raw_json"),
+        col("article").isNull().alias("json_parse_failed"),
+        col("article.article_id").alias("article_id"),
+        col("article.published_at").alias("published_at"),
+        col("article.source").alias("source"),
+        col("article.headline").alias("headline"),
+        col("article.full_text").alias("full_text"),
+        col("article.url").alias("url"),
+        col("article.ingested_at").alias("ingested_at")
+    )
+
+    print("\nTotal new Bronze records:", news_df.count())
+
+    return news_df, new_files
