@@ -1,6 +1,7 @@
 
 import os
 import sys
+import json
 from pathlib import Path
 from datetime import timezone
 
@@ -35,8 +36,87 @@ BRONZE_PATH = (
     / "news"
 )
 
+CHECKPOINT_DIR = (
+    PROJECT_ROOT
+    / "silver_news"
+    / "data"
+    / "checkpoints"
+)
+
+PROCESSED_FILES_PATH = CHECKPOINT_DIR / "processed_files.json"
+
+
 # --------------------------------------------------
-# 2. Define schemas
+# 2. Checkpoint functions
+# --------------------------------------------------
+
+def load_processed_files():
+
+    if not PROCESSED_FILES_PATH.exists():
+        return set()
+
+    with open(PROCESSED_FILES_PATH, "r", encoding="utf-8") as file:
+        data = json.load(file)
+
+    return set(data.get("processed_files", []))
+
+
+def discover_new_files():
+
+    if not BRONZE_PATH.exists():
+        raise FileNotFoundError(
+            f"Bronze folder not found: {BRONZE_PATH}"
+        )
+
+    all_files = sorted(BRONZE_PATH.glob("*.parquet"))
+
+    processed_files = load_processed_files()
+
+    new_files = [
+        file for file in all_files
+        if file.name not in processed_files
+    ]
+
+    print("\n========== INCREMENTAL FILE CHECK ==========")
+
+    print("Total Bronze files:", len(all_files))
+    print("Previously processed files:", len(processed_files))
+    print("New files to process:", len(new_files))
+
+    for file in new_files:
+        print("NEW:", file.name)
+
+    for file in all_files:
+        if file.name in processed_files:
+            print("SKIPPED:", file.name)
+
+    return new_files
+
+
+def save_processed_files(processed_file_names):
+
+    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+
+    existing_files = load_processed_files()
+
+    existing_files.update(processed_file_names)
+
+    checkpoint_data = {
+        "processed_files": sorted(existing_files)
+    }
+
+    temp_path = PROCESSED_FILES_PATH.with_suffix(".tmp")
+
+    with open(temp_path, "w", encoding="utf-8") as file:
+        json.dump(checkpoint_data, file, indent=4)
+
+    temp_path.replace(PROCESSED_FILES_PATH)
+
+    print("File checkpoint updated successfully.")
+
+
+# --------------------------------------------------
+# 3. Define schemas
 # --------------------------------------------------
 
 bronze_schema = StructType([
@@ -45,7 +125,8 @@ bronze_schema = StructType([
     StructField("topic", StringType(), False),
     StructField("partition", IntegerType(), False),
     StructField("offset", LongType(), False),
-    StructField("kafka_ts", TimestampType(), False)
+    StructField("kafka_ts", TimestampType(), False),
+    StructField("bronze_file", StringType(), True)
 ])
 
 article_schema = StructType([
@@ -58,13 +139,14 @@ article_schema = StructType([
     StructField("ingested_at", StringType(), True)
 ])
 
+
 # --------------------------------------------------
-# 3. Create Spark session
+# 4. Create Spark session
 # --------------------------------------------------
 
 spark = (
     SparkSession.builder
-    .appName("ReadActualBronzeNews")
+    .appName("IncrementalBronzeNewsReader")
     .master("local[*]")
     .config("spark.sql.session.timeZone", "UTC")
     .getOrCreate()
@@ -75,128 +157,135 @@ spark.sparkContext.setLogLevel("ERROR")
 try:
 
     # --------------------------------------------------
-    # 4. Read all Bronze Parquet files
+    # 5. Discover only new Bronze files
     # --------------------------------------------------
 
-    print("\n========== READING ACTUAL BRONZE PARQUET ==========")
+    print("\n========== INCREMENTAL BRONZE READER ==========")
 
-    if not BRONZE_PATH.exists():
-        raise FileNotFoundError(
-            f"Bronze folder not found: {BRONZE_PATH}"
+    new_files = discover_new_files()
+
+    if not new_files:
+        print("\nNo new Bronze files. Nothing to process.")
+
+    else:
+
+        # --------------------------------------------------
+        # 6. Read new Parquet files
+        # --------------------------------------------------
+
+        records = []
+
+        for parquet_file in new_files:
+
+            print(f"\nReading: {parquet_file.name}")
+
+            arrow_table = pq.read_table(parquet_file)
+            file_records = arrow_table.to_pylist()
+
+            for record in file_records:
+
+                # Track the source file for every record
+                record["bronze_file"] = parquet_file.name
+
+                # Convert timezone-aware timestamps to naive UTC
+                timestamp = record["kafka_ts"]
+
+                if timestamp is not None and timestamp.tzinfo is not None:
+                    record["kafka_ts"] = (
+                        timestamp.astimezone(timezone.utc)
+                        .replace(tzinfo=None)
+                    )
+
+            print("Records in file:", len(file_records))
+
+            records.extend(file_records)
+
+        print("\nNew Bronze files:", len(new_files))
+        print("New Bronze records:", len(records))
+
+        # --------------------------------------------------
+        # 7. Create Spark DataFrame
+        # --------------------------------------------------
+
+        bronze_df = spark.createDataFrame(
+            records,
+            schema=bronze_schema
         )
 
-    parquet_files = sorted(BRONZE_PATH.glob("*.parquet"))
+        print("\nBRONZE DATA SCHEMA:")
+        bronze_df.printSchema()
 
-    if not parquet_files:
-        print("No Bronze Parquet files found.")
-        sys.exit(0)
+        # --------------------------------------------------
+        # 8. Parse raw JSON
+        # --------------------------------------------------
 
-    records = []
+        print("\n========== PARSING RAW JSON ==========")
 
-    for parquet_file in parquet_files:
+        parsed_df = bronze_df.withColumn(
+            "article",
+            from_json(col("raw_json"), article_schema)
+        )
 
-        print(f"\nReading: {parquet_file.name}")
+        # --------------------------------------------------
+        # 9. Extract article fields
+        # --------------------------------------------------
 
-        arrow_table = pq.read_table(parquet_file)
-        file_records = arrow_table.to_pylist()
+        news_df = parsed_df.select(
+            col("bronze_file"),
+            col("kafka_key"),
+            col("topic"),
+            col("partition"),
+            col("offset"),
+            col("kafka_ts"),
+            col("article.article_id").alias("article_id"),
+            col("article.published_at").alias("published_at"),
+            col("article.source").alias("source"),
+            col("article.headline").alias("headline"),
+            col("article.full_text").alias("full_text"),
+            col("article.url").alias("url"),
+            col("article.ingested_at").alias("ingested_at")
+        )
 
-        # Convert timezone-aware timestamps to naive UTC
-        for record in file_records:
-            timestamp = record["kafka_ts"]
+        # --------------------------------------------------
+        # 10. Display extracted records
+        # --------------------------------------------------
 
-            if timestamp is not None and timestamp.tzinfo is not None:
-                record["kafka_ts"] = (
-                    timestamp.astimezone(timezone.utc)
-                    .replace(tzinfo=None)
-                )
+        print("\n========== NEW EXTRACTED NEWS ==========")
 
-        print("Records in file:", len(file_records))
+        news_df.show(truncate=False)
 
-        records.extend(file_records)
+        print("\nEXTRACTED NEWS SCHEMA:")
+        news_df.printSchema()
 
-    print("\nTotal Bronze files:", len(parquet_files))
-    print("Total Bronze records:", len(records))
+        print("\nTOTAL EXTRACTED ARTICLES:", news_df.count())
 
-    # --------------------------------------------------
-    # 5. Create Spark DataFrame
-    # --------------------------------------------------
+        # --------------------------------------------------
+        # 11. Basic data checks
+        # --------------------------------------------------
 
-    bronze_df = spark.createDataFrame(
-        records,
-        schema=bronze_schema
-    )
+        print("\n========== BASIC DATA CHECKS ==========")
 
-    print("\nBRONZE DATA SCHEMA:")
-    bronze_df.printSchema()
+        print(
+            "Missing headlines:",
+            news_df.filter(col("headline").isNull()).count()
+        )
 
-    print("\nBRONZE RECORDS:")
-    bronze_df.show(truncate=False)
+        print(
+            "Missing full_text:",
+            news_df.filter(col("full_text").isNull()).count()
+        )
 
-    # --------------------------------------------------
-    # 6. Parse raw_json
-    # --------------------------------------------------
+        print(
+            "Missing published_at:",
+            news_df.filter(col("published_at").isNull()).count()
+        )
 
-    print("\n========== PARSING RAW JSON ==========")
+        print("\nINCREMENTAL BRONZE READING COMPLETED!")
 
-    parsed_df = bronze_df.withColumn(
-        "article",
-        from_json(col("raw_json"), article_schema)
-    )
-
-    # --------------------------------------------------
-    # 7. Extract article fields
-    # --------------------------------------------------
-
-    news_df = parsed_df.select(
-        col("kafka_key"),
-        col("topic"),
-        col("partition"),
-        col("offset"),
-        col("kafka_ts"),
-        col("article.article_id").alias("article_id"),
-        col("article.published_at").alias("published_at"),
-        col("article.source").alias("source"),
-        col("article.headline").alias("headline"),
-        col("article.full_text").alias("full_text"),
-        col("article.url").alias("url"),
-        col("article.ingested_at").alias("ingested_at")
-    )
-
-    # --------------------------------------------------
-    # 8. Display extracted news
-    # --------------------------------------------------
-
-    print("\n========== EXTRACTED NEWS DATA ==========")
-
-    news_df.show(truncate=False)
-
-    print("\nEXTRACTED NEWS SCHEMA:")
-    news_df.printSchema()
-
-    print("\nTOTAL EXTRACTED ARTICLES:", news_df.count())
-
-    # --------------------------------------------------
-    # 9. Basic data checks
-    # --------------------------------------------------
-
-    print("\n========== BASIC DATA CHECKS ==========")
-
-    print(
-        "Missing headlines:",
-        news_df.filter(col("headline").isNull()).count()
-    )
-
-    print(
-        "Missing full_text:",
-        news_df.filter(col("full_text").isNull()).count()
-    )
-
-    print(
-        "Missing published_at:",
-        news_df.filter(col("published_at").isNull()).count()
-    )
-
-    print("\nACTUAL BRONZE READING AND JSON PARSING COMPLETED!")
+        # IMPORTANT:
+        # Do not update the processed-file checkpoint here.
+        # The final pipeline runner will update it only after
+        # successful validation, DLQ and Silver output writes.
 
 finally:
 
