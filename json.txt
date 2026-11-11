@@ -1,388 +1,266 @@
-
-import json
-import shutil
-import re
-from pathlib import Path
-
-
-# --------------------------------------------------
-# 1. PROJECT PATHS
-# --------------------------------------------------
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
-DATA_PATH = PROJECT_ROOT / "silver_news" / "data"
-
-STAGING_PATH = DATA_PATH / "_staging"
-
-SILVER_PATH = DATA_PATH / "silver"
-
-NEWS_PATH = SILVER_PATH / "news"
-
-NEWS_BY_TICKER_PATH = SILVER_PATH / "news_by_ticker"
-
-DLQ_PATH = DATA_PATH / "processed" / "dead_letter"
-
-CHECKPOINT_PATH = DATA_PATH / "checkpoints"
-
-COMMITTED_BATCHES_PATH = CHECKPOINT_PATH / "committed_batches"
-
-
-# --------------------------------------------------
-# 2. CHECK WHETHER BATCH IS ALREADY COMMITTED
-# --------------------------------------------------
-
-def is_batch_committed(batch_id):
-
-    marker_path = (
-        COMMITTED_BATCHES_PATH
-        / f"{batch_id}.json"
-    )
-
-    return marker_path.exists()
-
-
-# --------------------------------------------------
-# 3. WRITE A DATAFRAME USING PYARROW
-# --------------------------------------------------
-
-def write_dataframe(dataframe, output_path):
-
-    import pyarrow as pa
-    import pyarrow.parquet as pq
-
-    print("\nWriting Parquet using PyArrow...")
-
-    # Create output directory.
-    output_path.mkdir(
-        parents=True,
-        exist_ok=False
-    )
-
-    # Convert Spark DataFrame to Pandas.
-    pandas_df = dataframe.toPandas()
-
-    print("Records to write:", len(pandas_df))
-
-    # Convert Pandas DataFrame to PyArrow Table.
-    arrow_table = pa.Table.from_pandas(
-        pandas_df,
-        preserve_index=False
-    )
-
-    # Define Parquet file path.
-    parquet_file = output_path / "part-00000.parquet"
-
-    # Write Parquet file.
-    pq.write_table(
-        arrow_table,
-        parquet_file,
-        compression="snappy"
-    )
-
-    print("Parquet file written:", parquet_file)
-
-
-# --------------------------------------------------
-# 4. CREATE COMMIT MARKER WITH BATCH METADATA
-# --------------------------------------------------
-
-def create_commit_marker(
-    batch_id,
-    bronze_files,
-    processed_article_ids
-):
-
-    COMMITTED_BATCHES_PATH.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    marker_path = (
-        COMMITTED_BATCHES_PATH
-        / f"{batch_id}.json"
-    )
-
-    temporary_path = marker_path.with_suffix(".tmp")
-
-    marker_data = {
-        "batch_id": batch_id,
-        "status": "COMMITTED",
-        "bronze_files": sorted(set(bronze_files)),
-        "processed_article_ids": sorted(
-            set(processed_article_ids)
-        )
-    }
-
-    with open(
-        temporary_path,
-        "w",
-        encoding="utf-8"
-    ) as file:
-
-        json.dump(
-            marker_data,
-            file,
-            indent=4
-        )
-
-    # Replace temporary marker with final marker.
-    temporary_path.replace(marker_path)
-
-    print("Commit marker created:", marker_path)
-
-
-# --------------------------------------------------
-# 5. RECOVER CHECKPOINTS FROM COMMITTED BATCHES
-# --------------------------------------------------
-
-def recover_checkpoints():
-
-    from checkpoint_manager import (
-        load_processed_files,
-        save_processed_files,
-        load_processed_article_ids,
-        save_processed_article_ids
-    )
-
-    print("\n========== CHECKPOINT RECOVERY ==========")
-
-    processed_files = load_processed_files()
-
-    processed_article_ids = load_processed_article_ids()
-
-    if not COMMITTED_BATCHES_PATH.exists():
-
-        print("No committed batches found.")
-
-        return
-
-    committed_count = 0
-
-    for marker_path in COMMITTED_BATCHES_PATH.glob("*.json"):
-
-        with open(
-            marker_path,
-            "r",
-            encoding="utf-8"
-        ) as file:
-
-            marker_data = json.load(file)
-
-        if marker_data.get("status") != "COMMITTED":
-            continue
-
-        # Check that recovery metadata exists.
-        if (
-            "bronze_files" not in marker_data
-            or "processed_article_ids" not in marker_data
-        ):
-
-            raise ValueError(
-                f"Commit marker {marker_path.name} "
-                "does not contain recovery metadata."
-            )
-
-        processed_files.update(
-            marker_data["bronze_files"]
-        )
-
-        processed_article_ids.update(
-            marker_data["processed_article_ids"]
-        )
-
-        committed_count += 1
-
-    # Save recovered checkpoints.
-    save_processed_files(processed_files)
-
-    save_processed_article_ids(processed_article_ids)
-
-    print("Committed batches recovered:", committed_count)
-
-    print("Processed Bronze files:", len(processed_files))
-
-    print("Processed article IDs:", len(processed_article_ids))
-
-    print("Checkpoint recovery completed.")
-
-
-# --------------------------------------------------
-# 6. WRITE ALL BATCH OUTPUTS SAFELY
-# --------------------------------------------------
-
-def write_batch_outputs(
-    batch_id,
-    news_with_sentiment_df,
-    news_by_ticker_with_sentiment_df,
-    invalid_df,
-    bronze_files,
-    processed_article_ids
-):
-
-    print("\n========== SAFE BATCH WRITING ==========")
-
-    # Validate batch ID.
-    if not re.fullmatch(r"[A-Za-z0-9_-]+", batch_id):
-
-        raise ValueError("Invalid batch ID")
-
-    # Do not overwrite an already committed batch.
-    if is_batch_committed(batch_id):
-
-        print("Batch already committed:", batch_id)
-
-        return False
-
-    # Define batch-specific paths.
-    staging_batch = STAGING_PATH / batch_id
-
-    final_news = (
-        NEWS_PATH / f"batch_id={batch_id}"
-    )
-
-    final_ticker = (
-        NEWS_BY_TICKER_PATH / f"batch_id={batch_id}"
-    )
-
-    final_dlq = (
-        DLQ_PATH / f"batch_id={batch_id}"
-    )
-
-    final_paths = [
-        final_news,
-        final_ticker,
-        final_dlq
-    ]
-
-    # Remove incomplete staging data from earlier attempts.
-    if staging_batch.exists():
-
-        shutil.rmtree(staging_batch)
-
-    # Remove incomplete final outputs only if there is
-    # no commit marker for this batch.
-    for path in final_paths:
-
-        if path.exists():
-
-            shutil.rmtree(path)
-
-    staging_batch.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    staged_news = staging_batch / "news"
-
-    staged_ticker = staging_batch / "news_by_ticker"
-
-    staged_dlq = staging_batch / "dead_letter"
-
-    try:
-
-        # ------------------------------------------
-        # A. WRITE ARTICLE-LEVEL SILVER DATA
-        # ------------------------------------------
-
-        print("\nWriting article-level Silver data...")
-
-        write_dataframe(
-            news_with_sentiment_df,
-            staged_news
-        )
-
-        # ------------------------------------------
-        # B. WRITE TICKER-LEVEL SILVER DATA
-        # ------------------------------------------
-
-        print("\nWriting ticker-level Silver data...")
-
-        write_dataframe(
-            news_by_ticker_with_sentiment_df,
-            staged_ticker
-        )
-
-        # ------------------------------------------
-        # C. WRITE DEAD LETTER RECORDS
-        # ------------------------------------------
-
-        print("\nWriting DLQ records...")
-
-        write_dataframe(
-            invalid_df,
-            staged_dlq
-        )
-
-        # ------------------------------------------
-        # D. MOVE STAGED OUTPUTS TO FINAL PATHS
-        # ------------------------------------------
-
-        NEWS_PATH.mkdir(
-            parents=True,
-            exist_ok=True
-        )
-
-        NEWS_BY_TICKER_PATH.mkdir(
-            parents=True,
-            exist_ok=True
-        )
-
-        DLQ_PATH.mkdir(
-            parents=True,
-            exist_ok=True
-        )
-
-        staged_news.rename(final_news)
-
-        staged_ticker.rename(final_ticker)
-
-        staged_dlq.rename(final_dlq)
-
-        # ------------------------------------------
-        # E. CREATE COMMIT MARKER
-        # ------------------------------------------
-
-        create_commit_marker(
-            batch_id=batch_id,
-            bronze_files=bronze_files,
-            processed_article_ids=processed_article_ids
-        )
-
-        print("\n========================================")
-        print("BATCH COMMITTED SUCCESSFULLY")
-        print("========================================")
-
-        print("Batch ID:", batch_id)
-
-        print("Bronze files:", len(bronze_files))
-
-        print("Article IDs:", len(processed_article_ids))
-
-        print("News output:", final_news)
-
-        print("Ticker output:", final_ticker)
-
-        print("DLQ output:", final_dlq)
-
-        return True
-
-    except Exception:
-
-        # Preserve outputs if the commit marker exists.
-        if not is_batch_committed(batch_id):
-
-            for path in final_paths:
-
-                if path.exists():
-
-                    shutil.rmtree(path)
-
-        raise
-
-    finally:
-
-        # Remove remaining staging data.
-        if staging_batch.exists():
-
-            shutil.rmtree(staging_batch)
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\src\run_silver_pipeline.py
+
+
+================================================
+          STARTING SILVER NEWS PIPELINE
+================================================
+WARNING: Using incubator modules: jdk.incubator.vector
+26/11/12 00:41:11 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
+Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\testing\utils.py:127: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
+  require_minimum_pandas_version()
+26/11/12 00:41:12 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+
+========== STEP 1: CHECKPOINT RECOVERY ==========
+
+========== CHECKPOINT RECOVERY ==========
+No committed batches found.
+
+========== STEP 2: READ BRONZE ==========
+
+========== INCREMENTAL FILE CHECK ==========
+Total Bronze files: 2
+Previously processed files: 0
+New files to process: 2
+NEW: news_20261111T121717065202Z_3db0d16c.parquet
+NEW: news_20261111T140258714551Z_b912528c.parquet
+
+Reading: news_20261111T121717065202Z_3db0d16c.parquet
+Records in file: 1
+
+Reading: news_20261111T140258714551Z_b912528c.parquet
+Records in file: 13
+                                                                                
+Total new Bronze records: 14
+New Bronze files: 2
+ - news_20261111T121717065202Z_3db0d16c.parquet
+ - news_20261111T140258714551Z_b912528c.parquet
+
+Batch ID: batch_c2b88c1be7eec104
+
+========== STEP 3: DEDUPLICATION ==========
+
+========== ARTICLE-LEVEL DEDUPLICATION ==========
+Previously processed article IDs: 0
+                                                                                
+========== DEDUPLICATION SUMMARY ==========
+Incoming records: 14
+Previously processed IDs: 0
+Records with missing article IDs: 0
+New unique articles: 14
+
+Article-level deduplication completed!
+Records proceeding to validation: 14                                            
+                                                                                
+========== STEP 4: VALIDATION ==========
+
+========== STARTING NEWS VALIDATION ==========
+                                                                                
+========== VALIDATION SUMMARY ==========
+Total candidate records: 14
+Valid records: 14
+Invalid records: 0
+
+Validation completed!
+Valid articles: 14                                                              
+Invalid articles: 0
+
+========== STEP 5: HTML CLEANING ==========
+
+========== STARTING HTML CLEANING ==========
+HTML cleaning completed.
+
+========== STEP 6: TICKER EXTRACTION ==========
+
+========== STARTING TICKER EXTRACTION ==========
+Number of companies loaded: 13
+                                                                                
+========== TICKER EXTRACTION RESULTS ==========
+Total articles: 14
+Articles with tickers: 14
+Articles without tickers: 0
+Total article-ticker mappings: 16                                               
+
+ARTICLE-LEVEL TICKER RESULTS:
++----------------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------------------+-----------------------+
+|article_id                                                      |cleaned_headline                                                                                                               |matched_tickers        |
++----------------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------------------+-----------------------+
+|2c722ecefd8cb6bb9d3b7d9429d7f5b28192d157673fd1cd0fdbd22e4de4bf59|Dividend Stocks in Focus: Coal India, Vedanta, IOCL and BPCL - Univest                                                         |[COALINDIA]            |
+|423f517ade55fbaf98d5b1d0388d5e63b51c82e367f084c77a0e5553c2b2e31b|Weekly Recap: ITC Limited Q1 revenue, profit decline and 52-week low - TradingView                                             |[ITC]                  |
+|4ff20cbbed92d4ad4c6719ffe03f6c6e81e01e8c2ebaa28143af8afdb36dd9b1|Infosys stock heads toward November 11 dividend payment - ad-hoc-news.de                                                       |[INFY]                 |
+|5c08a8c5d877893dd3c61616a61dec7def617aa2d7416e487fb9fd44c4682554|Sun Pharma completes $11.75bn financing syndication for Organon acquisition - Generics and Biosimilars Initiative              |[SUNPHARMA]            |
+|6a6f6284e981898c7d2108c743ca4bb36aa427ea6d280e257be4ede7fa32a644|ICICI Bank Q2 results: Net profit rises 20% to Rs 14,843 crore, beats estimates; NII up 18% - Moneycontrol.com                 |[ICICIBANK]            |
+|70de7eb0da939f8c077370d9b22ac289af38d6674f344fe561d89afb72f7174b|Tata Steel shares rise 2%. Why brokerages remain bullish; see up to 30% upside potential - The Economic Times                  |[TATASTEEL]            |
+|7a647c9b226e0c002442ef7244802e6b7cac83897ea07d90891f975ed10a3742|Tata Consultancy Services Stock And Other Indian Dividend Anchors Built For Steady Income - Yahoo Finance                      |[TCS]                  |
+|ace671ba086e7aed98d7a37c90993e58e2fe5cefaff41ab0dc7254b3553b2d29|Bajaj Finance Approves Opening of QIP at ₹992.25 Floor Price - TipRanks                                                        |[BAJFINANCE]           |
+|b1c177b40466d92da778a1eb89f952a2e51bcac7d43689f2acc5c50bcc9422fa|Bajaj Finance opens QIP at Rs 992.25 floor price, may offer up to 5% discount - The Economic Times                             |[BAJFINANCE]           |
+|bba566cd475cef8feaf73d348a87ba2a1ff0cdd09b24ad2d372bbb3135bb52a0|RIL, HDFC Bank, Axis To Max Healthcare: Jefferies Picks 12 Stocks For FPI Comeback - NDTV Profit                               |[RELIANCE, HDFCBANK]   |
+|c2ebd89a49cc9faf146713ae4e7568a0aea9c99175cc6d190f9445e526f2b07e|Adani Enterprises plans INR 35,000-40,000 crore annual capex as airports, data centres and PVC drive expansion - Prop News Time|[ADANIENT]             |
+|d00a68553fe57e84eb4ea5fd73cba59555df770dcc38c31b5811758646987125|Khaitan & Co Advises Reliance Industries On Strategic Partnership With Meta For AI Data Centre In India - LawBeat              |[RELIANCE]             |
+|e1e59bed7ce58ba019828ca9a66295069a9c101878dc683ebae3fe4037055eac|Earnings call transcript: State Bank of India Q2 2027 profit rises, stock falls 5% - Investing.com India                       |[SBIN]                 |
+|e24c42d5692208648e23dd631858e3ab9abef29db7983a64c52f789c9c98070c|ICICI Securities gives Bharti Airtel buy rating with ₹2,430 target - NewsBytes                                                 |[ICICIBANK, BHARTIARTL]|
++----------------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------------------+-----------------------+
+
+
+NEWS BY TICKER RESULTS:
++----------------------------------------------------------------+----------+-------------------------------------------------------------------------------------------------------------------------------+
+|article_id                                                      |ticker    |cleaned_headline                                                                                                               |
++----------------------------------------------------------------+----------+-------------------------------------------------------------------------------------------------------------------------------+
+|2c722ecefd8cb6bb9d3b7d9429d7f5b28192d157673fd1cd0fdbd22e4de4bf59|COALINDIA |Dividend Stocks in Focus: Coal India, Vedanta, IOCL and BPCL - Univest                                                         |
+|423f517ade55fbaf98d5b1d0388d5e63b51c82e367f084c77a0e5553c2b2e31b|ITC       |Weekly Recap: ITC Limited Q1 revenue, profit decline and 52-week low - TradingView                                             |
+|4ff20cbbed92d4ad4c6719ffe03f6c6e81e01e8c2ebaa28143af8afdb36dd9b1|INFY      |Infosys stock heads toward November 11 dividend payment - ad-hoc-news.de                                                       |
+|5c08a8c5d877893dd3c61616a61dec7def617aa2d7416e487fb9fd44c4682554|SUNPHARMA |Sun Pharma completes $11.75bn financing syndication for Organon acquisition - Generics and Biosimilars Initiative              |
+|6a6f6284e981898c7d2108c743ca4bb36aa427ea6d280e257be4ede7fa32a644|ICICIBANK |ICICI Bank Q2 results: Net profit rises 20% to Rs 14,843 crore, beats estimates; NII up 18% - Moneycontrol.com                 |
+|70de7eb0da939f8c077370d9b22ac289af38d6674f344fe561d89afb72f7174b|TATASTEEL |Tata Steel shares rise 2%. Why brokerages remain bullish; see up to 30% upside potential - The Economic Times                  |
+|7a647c9b226e0c002442ef7244802e6b7cac83897ea07d90891f975ed10a3742|TCS       |Tata Consultancy Services Stock And Other Indian Dividend Anchors Built For Steady Income - Yahoo Finance                      |
+|ace671ba086e7aed98d7a37c90993e58e2fe5cefaff41ab0dc7254b3553b2d29|BAJFINANCE|Bajaj Finance Approves Opening of QIP at ₹992.25 Floor Price - TipRanks                                                        |
+|b1c177b40466d92da778a1eb89f952a2e51bcac7d43689f2acc5c50bcc9422fa|BAJFINANCE|Bajaj Finance opens QIP at Rs 992.25 floor price, may offer up to 5% discount - The Economic Times                             |
+|bba566cd475cef8feaf73d348a87ba2a1ff0cdd09b24ad2d372bbb3135bb52a0|RELIANCE  |RIL, HDFC Bank, Axis To Max Healthcare: Jefferies Picks 12 Stocks For FPI Comeback - NDTV Profit                               |
+|bba566cd475cef8feaf73d348a87ba2a1ff0cdd09b24ad2d372bbb3135bb52a0|HDFCBANK  |RIL, HDFC Bank, Axis To Max Healthcare: Jefferies Picks 12 Stocks For FPI Comeback - NDTV Profit                               |
+|c2ebd89a49cc9faf146713ae4e7568a0aea9c99175cc6d190f9445e526f2b07e|ADANIENT  |Adani Enterprises plans INR 35,000-40,000 crore annual capex as airports, data centres and PVC drive expansion - Prop News Time|
+|d00a68553fe57e84eb4ea5fd73cba59555df770dcc38c31b5811758646987125|RELIANCE  |Khaitan & Co Advises Reliance Industries On Strategic Partnership With Meta For AI Data Centre In India - LawBeat              |
+|e1e59bed7ce58ba019828ca9a66295069a9c101878dc683ebae3fe4037055eac|SBIN      |Earnings call transcript: State Bank of India Q2 2027 profit rises, stock falls 5% - Investing.com India                       |
+|e24c42d5692208648e23dd631858e3ab9abef29db7983a64c52f789c9c98070c|ICICIBANK |ICICI Securities gives Bharti Airtel buy rating with ₹2,430 target - NewsBytes                                                 |
+|e24c42d5692208648e23dd631858e3ab9abef29db7983a64c52f789c9c98070c|BHARTIARTL|ICICI Securities gives Bharti Airtel buy rating with ₹2,430 target - NewsBytes                                                 |
++----------------------------------------------------------------+----------+-------------------------------------------------------------------------------------------------------------------------------+
+
+
+TICKER EXTRACTION COMPLETED!
+
+========== STEP 7: FINBERT SENTIMENT ==========
+
+========== STARTING FINBERT SENTIMENT ANALYSIS ==========
+Total unique articles: 14                                                       
+
+========== LOADING FINBERT ==========
+Using device: cpu
+Tokenizer loaded successfully.
+Loading weights: 100%|██████████████████████████████████████████████████████████| 201/201 [00:00<00:00, 688.62it/s]
+FinBERT model loaded successfully!
+
+Model sentiment labels:
+{'positive': 0, 'negative': 1, 'neutral': 2}
+
+Starting FinBERT inference...
+Processed 8/14 articles
+Processed 14/14 articles
+                                                                                
+========== ARTICLE-LEVEL SENTIMENT ==========
+26/11/12 00:48:19 WARN SparkStringUtils: Truncated the string representation of a plan since it was too large. This behavior can be adjusted by setting 'spark.sql.debug.maxToStringFields'.
++----------------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------------------+-----------------------+---------+--------------------+--------------------+--------------------+--------------------+
+|article_id                                                      |cleaned_headline                                                                                                               |matched_tickers        |sentiment|positive_score      |negative_score      |neutral_score       |sentiment_score     |
++----------------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------------------+-----------------------+---------+--------------------+--------------------+--------------------+--------------------+
+|2c722ecefd8cb6bb9d3b7d9429d7f5b28192d157673fd1cd0fdbd22e4de4bf59|Dividend Stocks in Focus: Coal India, Vedanta, IOCL and BPCL - Univest                                                         |[COALINDIA]            |neutral  |0.02875244803726673 |0.02103118784725666 |0.9502163529396057  |0.007721260190010071|
+|423f517ade55fbaf98d5b1d0388d5e63b51c82e367f084c77a0e5553c2b2e31b|Weekly Recap: ITC Limited Q1 revenue, profit decline and 52-week low - TradingView                                             |[ITC]                  |negative |0.00824438501149416 |0.9741014242172241  |0.0176541805267334  |-0.96585703920573   |
+|4ff20cbbed92d4ad4c6719ffe03f6c6e81e01e8c2ebaa28143af8afdb36dd9b1|Infosys stock heads toward November 11 dividend payment - ad-hoc-news.de                                                       |[INFY]                 |neutral  |0.07473237812519073 |0.01443940494209528 |0.9108282327651978  |0.060292973183095455|
+|5c08a8c5d877893dd3c61616a61dec7def617aa2d7416e487fb9fd44c4682554|Sun Pharma completes $11.75bn financing syndication for Organon acquisition - Generics and Biosimilars Initiative              |[SUNPHARMA]            |positive |0.6523731350898743  |0.00888133142143488 |0.33874544501304626 |0.6434918036684394  |
+|6a6f6284e981898c7d2108c743ca4bb36aa427ea6d280e257be4ede7fa32a644|ICICI Bank Q2 results: Net profit rises 20% to Rs 14,843 crore, beats estimates; NII up 18% - Moneycontrol.com                 |[ICICIBANK]            |positive |0.9434094429016113  |0.026369383558630943|0.030221158638596535|0.9170400593429804  |
+|70de7eb0da939f8c077370d9b22ac289af38d6674f344fe561d89afb72f7174b|Tata Steel shares rise 2%. Why brokerages remain bullish; see up to 30% upside potential - The Economic Times                  |[TATASTEEL]            |positive |0.7201249003410339  |0.04390176758170128 |0.23597335815429688 |0.6762231327593327  |
+|7a647c9b226e0c002442ef7244802e6b7cac83897ea07d90891f975ed10a3742|Tata Consultancy Services Stock And Other Indian Dividend Anchors Built For Steady Income - Yahoo Finance                      |[TCS]                  |neutral  |0.12213986366987228 |0.016893692314624786|0.8609664440155029  |0.1052461713552475  |
+|ace671ba086e7aed98d7a37c90993e58e2fe5cefaff41ab0dc7254b3553b2d29|Bajaj Finance Approves Opening of QIP at ₹992.25 Floor Price - TipRanks                                                        |[BAJFINANCE]           |neutral  |0.12019325792789459 |0.009935553185641766|0.869871199131012   |0.11025770474225283 |
+|b1c177b40466d92da778a1eb89f952a2e51bcac7d43689f2acc5c50bcc9422fa|Bajaj Finance opens QIP at Rs 992.25 floor price, may offer up to 5% discount - The Economic Times                             |[BAJFINANCE]           |neutral  |0.3265865743160248  |0.009915398433804512|0.6634979844093323  |0.31667117588222027 |
+|bba566cd475cef8feaf73d348a87ba2a1ff0cdd09b24ad2d372bbb3135bb52a0|RIL, HDFC Bank, Axis To Max Healthcare: Jefferies Picks 12 Stocks For FPI Comeback - NDTV Profit                               |[RELIANCE, HDFCBANK]   |neutral  |0.127339169383049   |0.01103041972965002 |0.8616304397583008  |0.11630874965339899 |
+|c2ebd89a49cc9faf146713ae4e7568a0aea9c99175cc6d190f9445e526f2b07e|Adani Enterprises plans INR 35,000-40,000 crore annual capex as airports, data centres and PVC drive expansion - Prop News Time|[ADANIENT]             |positive |0.6345735788345337  |0.008877865970134735|0.35654863715171814 |0.625695712864399   |
+|d00a68553fe57e84eb4ea5fd73cba59555df770dcc38c31b5811758646987125|Khaitan & Co Advises Reliance Industries On Strategic Partnership With Meta For AI Data Centre In India - LawBeat              |[RELIANCE]             |neutral  |0.47646960616111755 |0.008165627717971802|0.5153647661209106  |0.46830397844314575 |
+|e1e59bed7ce58ba019828ca9a66295069a9c101878dc683ebae3fe4037055eac|Earnings call transcript: State Bank of India Q2 2027 profit rises, stock falls 5% - Investing.com India                       |[SBIN]                 |negative |0.053210221230983734|0.6322794556617737  |0.31451037526130676 |-0.57906923443079   |
+|e24c42d5692208648e23dd631858e3ab9abef29db7983a64c52f789c9c98070c|ICICI Securities gives Bharti Airtel buy rating with ₹2,430 target - NewsBytes                                                 |[ICICIBANK, BHARTIARTL]|neutral  |0.11493004858493805 |0.01053816732019186 |0.8745318055152893  |0.10439188126474619 |
++----------------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------------------+-----------------------+---------+--------------------+--------------------+--------------------+--------------------+
+
+
+========== TICKER-LEVEL SENTIMENT ==========
++----------------------------------------------------------------+----------+---------+--------------------+
+|article_id                                                      |ticker    |sentiment|sentiment_score     |
++----------------------------------------------------------------+----------+---------+--------------------+
+|2c722ecefd8cb6bb9d3b7d9429d7f5b28192d157673fd1cd0fdbd22e4de4bf59|COALINDIA |neutral  |0.007721260190010071|
+|423f517ade55fbaf98d5b1d0388d5e63b51c82e367f084c77a0e5553c2b2e31b|ITC       |negative |-0.96585703920573   |
+|4ff20cbbed92d4ad4c6719ffe03f6c6e81e01e8c2ebaa28143af8afdb36dd9b1|INFY      |neutral  |0.060292973183095455|
+|5c08a8c5d877893dd3c61616a61dec7def617aa2d7416e487fb9fd44c4682554|SUNPHARMA |positive |0.6434918036684394  |
+|6a6f6284e981898c7d2108c743ca4bb36aa427ea6d280e257be4ede7fa32a644|ICICIBANK |positive |0.9170400593429804  |
+|70de7eb0da939f8c077370d9b22ac289af38d6674f344fe561d89afb72f7174b|TATASTEEL |positive |0.6762231327593327  |
+|7a647c9b226e0c002442ef7244802e6b7cac83897ea07d90891f975ed10a3742|TCS       |neutral  |0.1052461713552475  |
+|ace671ba086e7aed98d7a37c90993e58e2fe5cefaff41ab0dc7254b3553b2d29|BAJFINANCE|neutral  |0.11025770474225283 |
+|b1c177b40466d92da778a1eb89f952a2e51bcac7d43689f2acc5c50bcc9422fa|BAJFINANCE|neutral  |0.31667117588222027 |
+|bba566cd475cef8feaf73d348a87ba2a1ff0cdd09b24ad2d372bbb3135bb52a0|RELIANCE  |neutral  |0.11630874965339899 |
+|bba566cd475cef8feaf73d348a87ba2a1ff0cdd09b24ad2d372bbb3135bb52a0|HDFCBANK  |neutral  |0.11630874965339899 |
+|c2ebd89a49cc9faf146713ae4e7568a0aea9c99175cc6d190f9445e526f2b07e|ADANIENT  |positive |0.625695712864399   |
+|d00a68553fe57e84eb4ea5fd73cba59555df770dcc38c31b5811758646987125|RELIANCE  |neutral  |0.46830397844314575 |
+|e1e59bed7ce58ba019828ca9a66295069a9c101878dc683ebae3fe4037055eac|SBIN      |negative |-0.57906923443079   |
+|e24c42d5692208648e23dd631858e3ab9abef29db7983a64c52f789c9c98070c|ICICIBANK |neutral  |0.10439188126474619 |
+|e24c42d5692208648e23dd631858e3ab9abef29db7983a64c52f789c9c98070c|BHARTIARTL|neutral  |0.10439188126474619 |
++----------------------------------------------------------------+----------+---------+--------------------+
+
+
+========================================
+FINBERT SENTIMENT ANALYSIS COMPLETED
+========================================
+Articles processed: 14
+Article-ticker records: 16
+
+Sentiment analysis completed successfully.
+
+========== STEP 8: WRITE OUTPUTS ==========
+
+========== SAFE BATCH WRITING ==========
+
+Writing article-level Silver data...
+
+Writing Parquet using PyArrow...
+C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\sql\pandas\conversion.py:324: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
+  require_minimum_pandas_version()
+C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\sql\pandas\types.py:786: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
+  require_minimum_pandas_version()
+Records to write: 14
+Parquet file written: C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\_staging\batch_c2b88c1be7eec104\news\part-00000.parquet
+
+Writing ticker-level Silver data...
+
+Writing Parquet using PyArrow...
+C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\sql\pandas\conversion.py:324: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
+  require_minimum_pandas_version()
+C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\sql\pandas\types.py:786: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
+  require_minimum_pandas_version()
+Records to write: 16
+Parquet file written: C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\_staging\batch_c2b88c1be7eec104\news_by_ticker\part-00000.parquet
+
+Writing DLQ records...
+
+Writing Parquet using PyArrow...
+C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\sql\pandas\conversion.py:324: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
+  require_minimum_pandas_version()
+C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\sql\pandas\types.py:786: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
+  require_minimum_pandas_version()
+Records to write: 0
+Parquet file written: C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\_staging\batch_c2b88c1be7eec104\dead_letter\part-00000.parquet
+Commit marker created: C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\checkpoints\committed_batches\batch_c2b88c1be7eec104.json
+
+========================================
+BATCH COMMITTED SUCCESSFULLY
+========================================
+Batch ID: batch_c2b88c1be7eec104
+Bronze files: 2
+Article IDs: 14
+News output: C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\silver\news\batch_id=batch_c2b88c1be7eec104
+Ticker output: C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\silver\news_by_ticker\batch_id=batch_c2b88c1be7eec104
+DLQ output: C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\dead_letter\batch_id=batch_c2b88c1be7eec104
+
+========== STEP 9: UPDATE CHECKPOINTS ==========
+Checkpoint files updated successfully.
+
+
+================================================
+          SILVER NEWS PIPELINE COMPLETED
+================================================
+Batch ID: batch_c2b88c1be7eec104
+Bronze files processed: 2
+Articles considered: 14
+Valid articles: 14
+Invalid articles: 0
+Article IDs checkpointed: 14
+
+Spark session stopped.
+SUCCESS: The process with PID 26012 (child process of PID 29116) has been terminated.
+SUCCESS: The process with PID 29116 (child process of PID 8952) has been terminated.
+SUCCESS: The process with PID 8952 (child process of PID 16076) has been terminated.
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> 
