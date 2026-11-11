@@ -1,15 +1,15 @@
- 
+
 import os
 import sys
-import json
 from pathlib import Path
- 
+from datetime import timezone
+
 import pyarrow.parquet as pq
- 
+
 # Configure Python for Spark
 os.environ["PYSPARK_PYTHON"] = sys.executable
 os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
- 
+
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, from_json
 from pyspark.sql.types import (
@@ -20,29 +20,25 @@ from pyspark.sql.types import (
     LongType,
     TimestampType
 )
- 
- 
+
 # --------------------------------------------------
 # 1. Define paths
 # --------------------------------------------------
- 
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
- 
+
 BRONZE_PATH = (
     PROJECT_ROOT
     / "silver_news"
     / "data"
-    / "simulated_bronze"
+    / "actual_bronze"
     / "news"
 )
- 
-PARQUET_FILE = BRONZE_PATH / "part-00000.parquet"
- 
- 
+
 # --------------------------------------------------
 # 2. Define schemas
 # --------------------------------------------------
- 
+
 bronze_schema = StructType([
     StructField("kafka_key", StringType(), True),
     StructField("raw_json", StringType(), False),
@@ -51,7 +47,7 @@ bronze_schema = StructType([
     StructField("offset", LongType(), False),
     StructField("kafka_ts", TimestampType(), False)
 ])
- 
+
 article_schema = StructType([
     StructField("article_id", StringType(), True),
     StructField("published_at", StringType(), True),
@@ -61,94 +57,102 @@ article_schema = StructType([
     StructField("url", StringType(), True),
     StructField("ingested_at", StringType(), True)
 ])
- 
- 
+
 # --------------------------------------------------
 # 3. Create Spark session
 # --------------------------------------------------
- 
+
 spark = (
     SparkSession.builder
-    .appName("ReadBronzeNews")
+    .appName("ReadActualBronzeNews")
     .master("local[*]")
     .config("spark.sql.session.timeZone", "UTC")
     .getOrCreate()
 )
- 
+
 spark.sparkContext.setLogLevel("ERROR")
- 
- 
+
 try:
- 
+
     # --------------------------------------------------
-    # 4. Read Parquet using PyArrow
+    # 4. Read all Bronze Parquet files
     # --------------------------------------------------
- 
-    print("\n========== READING BRONZE PARQUET ==========")
- 
-    if not PARQUET_FILE.exists():
+
+    print("\n========== READING ACTUAL BRONZE PARQUET ==========")
+
+    if not BRONZE_PATH.exists():
         raise FileNotFoundError(
-            f"Parquet file not found: {PARQUET_FILE}"
+            f"Bronze folder not found: {BRONZE_PATH}"
         )
- 
-    arrow_table = pq.read_table(PARQUET_FILE)
- 
-    records = arrow_table.to_pylist()
- 
-    # Convert timezone-aware timestamps to naive UTC
-    # Spark session timezone is configured as UTC.
-    for record in records:
-        timestamp = record["kafka_ts"]
- 
-        if timestamp.tzinfo is not None:
-            record["kafka_ts"] = (
-                timestamp.astimezone(
-                    __import__("datetime").timezone.utc
-                ).replace(tzinfo=None)
-            )
- 
+
+    parquet_files = sorted(BRONZE_PATH.glob("*.parquet"))
+
+    if not parquet_files:
+        print("No Bronze Parquet files found.")
+        sys.exit(0)
+
+    records = []
+
+    for parquet_file in parquet_files:
+
+        print(f"\nReading: {parquet_file.name}")
+
+        arrow_table = pq.read_table(parquet_file)
+        file_records = arrow_table.to_pylist()
+
+        # Convert timezone-aware timestamps to naive UTC
+        for record in file_records:
+            timestamp = record["kafka_ts"]
+
+            if timestamp is not None and timestamp.tzinfo is not None:
+                record["kafka_ts"] = (
+                    timestamp.astimezone(timezone.utc)
+                    .replace(tzinfo=None)
+                )
+
+        print("Records in file:", len(file_records))
+
+        records.extend(file_records)
+
+    print("\nTotal Bronze files:", len(parquet_files))
     print("Total Bronze records:", len(records))
- 
- 
+
     # --------------------------------------------------
     # 5. Create Spark DataFrame
     # --------------------------------------------------
- 
+
     bronze_df = spark.createDataFrame(
         records,
         schema=bronze_schema
     )
- 
+
     print("\nBRONZE DATA SCHEMA:")
     bronze_df.printSchema()
- 
+
     print("\nBRONZE RECORDS:")
     bronze_df.show(truncate=False)
- 
- 
+
     # --------------------------------------------------
     # 6. Parse raw_json
     # --------------------------------------------------
- 
+
     print("\n========== PARSING RAW JSON ==========")
- 
+
     parsed_df = bronze_df.withColumn(
         "article",
         from_json(col("raw_json"), article_schema)
     )
- 
- 
+
     # --------------------------------------------------
     # 7. Extract article fields
     # --------------------------------------------------
- 
+
     news_df = parsed_df.select(
         col("kafka_key"),
         col("topic"),
         col("partition"),
         col("offset"),
         col("kafka_ts"),
- 
         col("article.article_id").alias("article_id"),
         col("article.published_at").alias("published_at"),
         col("article.source").alias("source"),
@@ -157,53 +161,44 @@ try:
         col("article.url").alias("url"),
         col("article.ingested_at").alias("ingested_at")
     )
- 
- 
+
     # --------------------------------------------------
     # 8. Display extracted news
     # --------------------------------------------------
- 
+
     print("\n========== EXTRACTED NEWS DATA ==========")
- 
+
     news_df.show(truncate=False)
- 
+
     print("\nEXTRACTED NEWS SCHEMA:")
     news_df.printSchema()
- 
+
     print("\nTOTAL EXTRACTED ARTICLES:", news_df.count())
- 
- 
+
     # --------------------------------------------------
     # 9. Basic data checks
     # --------------------------------------------------
- 
+
     print("\n========== BASIC DATA CHECKS ==========")
- 
+
     print(
         "Missing headlines:",
         news_df.filter(col("headline").isNull()).count()
     )
- 
+
     print(
         "Missing full_text:",
         news_df.filter(col("full_text").isNull()).count()
     )
- 
+
     print(
         "Missing published_at:",
         news_df.filter(col("published_at").isNull()).count()
     )
- 
-    print("\nBRONZE READING AND JSON PARSING COMPLETED!")
- 
- 
-except Exception as e:
- 
-    print("\nERROR:", str(e))
-    raise
- 
+
+    print("\nACTUAL BRONZE READING AND JSON PARSING COMPLETED!")
+
 finally:
- 
+
     spark.stop()
     print("\nSPARK SESSION STOPPED")
- 
