@@ -1,186 +1,150 @@
-
-import os
-import sys
-from pathlib import Path
-
-# --------------------------------------------------
-# 1. PROJECT PATH
-# --------------------------------------------------
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
-SRC_PATH = PROJECT_ROOT / "silver_news" / "src"
-
-sys.path.insert(0, str(SRC_PATH))
-
-# --------------------------------------------------
-# 2. PYTHON CONFIGURATION
-# --------------------------------------------------
-
-os.environ["PYSPARK_PYTHON"] = sys.executable
-os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
-
-from pyspark.sql import SparkSession
-
-from sentiment_analysis import analyse_sentiment
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\tests\test_sentiment_analysis.py
 
 
-# --------------------------------------------------
-# 3. CREATE SPARK SESSION
-# --------------------------------------------------
+Checking local FinBERT model...
+All FinBERT model files are available.
 
-spark = (
-    SparkSession.builder
-    .master("local[*]")
-    .appName("TestFinBERTSentiment")
-    .config("spark.sql.session.timeZone", "UTC")
-    .getOrCreate()
-)
+Using device: cpu
 
-spark.sparkContext.setLogLevel("ERROR")
+Loading FinBERT tokenizer...
+Tokenizer loaded successfully.
 
+Loading FinBERT model...
+Loading weights: 100%|██████████████████████████████████████████████████████████| 201/201 [00:00<00:00, 508.88it/s]
+FinBERT model loaded successfully!
 
-try:
+Model sentiment labels:
+{'positive': 0, 'negative': 1, 'neutral': 2}
 
-    # --------------------------------------------------
-    # 4. CREATE SAMPLE CLEANED NEWS
-    # --------------------------------------------------
+Reading news with extracted tickers...
+Total articles: 8
 
-    print("\n========== CREATING SAMPLE NEWS ==========")
+Starting FinBERT sentiment analysis...
+Processed 8/8 articles
 
-    news_records = [
+FinBERT Sentiment Results
+=========================
 
-        {
-            "article_id": "TEST-001",
-            "headline": "Company reports strong quarterly profit",
-            "cleaned_headline": "Company reports strong quarterly profit",
-            "cleaned_full_text": "Company reports strong quarterly profit growth.",
-            "text_for_analysis": "Company reports strong quarterly profit growth.",
-            "matched_tickers": ["RELIANCE"]
-        },
+Article ID: NEWS-001
+Headline: Reliance Industries shares rise after strong quarterly results
+Matched tickers: ['RELIANCE']
+Sentiment: positive
+Positive score: 0.9551
+Negative score: 0.0224
+Neutral score: 0.0226
+Sentiment score: 0.9327
 
-        {
-            "article_id": "TEST-002",
-            "headline": "Company faces significant financial losses",
-            "cleaned_headline": "Company faces significant financial losses",
-            "cleaned_full_text": "Company faces significant financial losses.",
-            "text_for_analysis": "Company faces significant financial losses.",
-            "matched_tickers": ["TCS", "INFY"]
-        }
-    ]
+Article ID: NEWS-002
+Headline: SBI shares decline amid banking sector pressure
+Matched tickers: ['SBIN']
+Sentiment: negative
+Positive score: 0.0066
+Negative score: 0.9703
+Neutral score: 0.0231
+Sentiment score: -0.9637
 
-    news_with_tickers_df = spark.createDataFrame(
-        news_records
-    )
+Article ID: NEWS-003
+Headline: Infosys announces expansion in artificial intelligence services
+Matched tickers: ['INFY']
+Sentiment: positive
+Positive score: 0.8112
+Negative score: 0.0105
+Neutral score: 0.1783
+Sentiment score: 0.8008
 
-    # --------------------------------------------------
-    # 5. CREATE SAMPLE NEWS BY TICKER
-    # --------------------------------------------------
+Article ID: NEWS-004
+Headline: HDFC Bank reports steady growth in quarterly deposits
+Matched tickers: ['HDFCBANK']
+Sentiment: positive
+Positive score: 0.9552
+Negative score: 0.0168
+Neutral score: 0.028
+Sentiment score: 0.9384
 
-    ticker_records = [
+Article ID: NEWS-005
+Headline: Reliance and TCS attract investor attention
+Matched tickers: ['RELIANCE', 'TCS']
+Sentiment: positive
+Positive score: 0.7891
+Negative score: 0.0138
+Neutral score: 0.1971
+Sentiment score: 0.7753
 
-        {
-            **news_records[0],
-            "ticker": "RELIANCE"
-        },
+Article ID: NEWS-006
+Headline: ICICI Bank announces new banking initiatives
+Matched tickers: ['ICICIBANK']
+Sentiment: positive
+Positive score: 0.7898
+Negative score: 0.013
+Neutral score: 0.1973
+Sentiment score: 0.7768
 
-        {
-            **news_records[1],
-            "ticker": "TCS"
-        },
+Article ID: NEWS-007
+Headline: Bharti Airtel expands its 5G network
+Matched tickers: ['BHARTIARTL']
+Sentiment: positive
+Positive score: 0.6744
+Negative score: 0.0097
+Neutral score: 0.3159
+Sentiment score: 0.6647
 
-        {
-            **news_records[1],
-            "ticker": "INFY"
-        }
-    ]
+Article ID: NEWS-008
+Headline: Tata Steel faces demand pressure
+Matched tickers: ['TATASTEEL']
+Sentiment: negative
+Positive score: 0.0744
+Negative score: 0.8608
+Neutral score: 0.0648
+Sentiment score: -0.7863
 
-    news_by_ticker_df = spark.createDataFrame(
-        ticker_records
-    )
+Saved successfully:
+C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\news_with_sentiment
 
-    print("Sample articles:", len(news_records))
-    print("Article-ticker mappings:", len(ticker_records))
+Creating sentiment-enriched news by ticker...
 
-    # --------------------------------------------------
-    # 6. RUN FINBERT SENTIMENT ANALYSIS
-    # --------------------------------------------------
+Saved successfully:
+C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\news_by_ticker_with_sentiment
 
-    print("\n========== RUNNING FINBERT ==========")
+========================================
+FINBERT SENTIMENT ANALYSIS COMPLETED
+========================================
+Articles processed: 8
+Article-ticker records: 9
 
-    article_sentiment_df, ticker_sentiment_df = analyse_sentiment(
-        news_with_tickers_df,
-        news_by_ticker_df
-    )
+Output folders:
+1. C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\news_with_sentiment
+2. C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\data\processed\news_by_ticker_with_sentiment
 
-    # --------------------------------------------------
-    # 7. VERIFY ARTICLE-LEVEL RESULTS
-    # --------------------------------------------------
+========== FINBERT ANALYSIS RESULTS ==========
+article_id                                                        headline matched_tickers sentiment  positive_score  negative_score  neutral_score  sentiment_score
+  NEWS-001  Reliance Industries shares rise after strong quarterly results      [RELIANCE]  positive        0.955057        0.022375       0.022568         0.932681
+  NEWS-002                 SBI shares decline amid banking sector pressure          [SBIN]  negative        0.006636        0.970292       0.023072        -0.963657
+  NEWS-003 Infosys announces expansion in artificial intelligence services          [INFY]  positive        0.811243        0.010486       0.178271         0.800757
+  NEWS-004           HDFC Bank reports steady growth in quarterly deposits      [HDFCBANK]  positive        0.955206        0.016756       0.028038         0.938450
+  NEWS-005                     Reliance and TCS attract investor attention [RELIANCE, TCS]  positive        0.789093        0.013815       0.197092         0.775278
+  NEWS-006                    ICICI Bank announces new banking initiatives     [ICICIBANK]  positive        0.789765        0.012951       0.197284         0.776814
+  NEWS-007                            Bharti Airtel expands its 5G network    [BHARTIARTL]  positive        0.674391        0.009732       0.315877         0.664659
+  NEWS-008                                Tata Steel faces demand pressure     [TATASTEEL]  negative        0.074449        0.860763       0.064787        -0.786314
 
-    print("\n========== ARTICLE SENTIMENT ==========")
+========== TOTAL SENTIMENT COUNTS ==========
+sentiment
+positive    6
+negative    2
+Name: count, dtype: int64
 
-    article_sentiment_df.select(
-        "article_id",
-        "sentiment",
-        "positive_score",
-        "negative_score",
-        "neutral_score",
-        "sentiment_score"
-    ).show(truncate=False)
-
-    # --------------------------------------------------
-    # 8. VERIFY TICKER-LEVEL RESULTS
-    # --------------------------------------------------
-
-    print("\n========== TICKER SENTIMENT ==========")
-
-    ticker_sentiment_df.select(
-        "article_id",
-        "ticker",
-        "sentiment",
-        "sentiment_score"
-    ).show(truncate=False)
-
-    # --------------------------------------------------
-    # 9. VALIDATION CHECKS
-    # --------------------------------------------------
-
-    article_count = article_sentiment_df.count()
-    ticker_count = ticker_sentiment_df.count()
-
-    missing_sentiment = article_sentiment_df.filter(
-        "sentiment IS NULL"
-    ).count()
-
-    missing_scores = article_sentiment_df.filter(
-        """
-        positive_score IS NULL OR
-        negative_score IS NULL OR
-        neutral_score IS NULL OR
-        sentiment_score IS NULL
-        """
-    ).count()
-
-    print("\n========== TEST SUMMARY ==========")
-
-    print("Articles processed:", article_count)
-    print("Ticker mappings processed:", ticker_count)
-    print("Missing sentiment:", missing_sentiment)
-    print("Missing sentiment scores:", missing_scores)
-
-    if (
-        article_count == 2
-        and ticker_count == 3
-        and missing_sentiment == 0
-        and missing_scores == 0
-    ):
-        print("\nFINBERT TEST PASSED!")
-
-    else:
-        print("\nFINBERT TEST NEEDS REVIEW.")
-
-finally:
-
-    spark.stop()
-
-    print("\nSPARK SESSION STOPPED.")
+========== TICKER-WISE SENTIMENT ==========
+                                                       headline     ticker sentiment  sentiment_score
+ Reliance Industries shares rise after strong quarterly results   RELIANCE  positive         0.932681
+                SBI shares decline amid banking sector pressure       SBIN  negative        -0.963657
+Infosys announces expansion in artificial intelligence services       INFY  positive         0.800757
+          HDFC Bank reports steady growth in quarterly deposits   HDFCBANK  positive         0.938450
+                    Reliance and TCS attract investor attention   RELIANCE  positive         0.775278
+                    Reliance and TCS attract investor attention        TCS  positive         0.775278
+                   ICICI Bank announces new banking initiatives  ICICIBANK  positive         0.776814
+                           Bharti Airtel expands its 5G network BHARTIARTL  positive         0.664659
+                               Tata Steel faces demand pressure  TATASTEEL  negative        -0.786314
+Traceback (most recent call last):
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\tests\test_sentiment_analysis.py", line 25, in <module>
+    from sentiment_analysis import analyse_sentiment
+ImportError: cannot import name 'analyse_sentiment' from 'sentiment_analysis' (C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\src\sentiment_analysis.py)
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> 
