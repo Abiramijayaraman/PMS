@@ -1,1 +1,20 @@
-https://github.com/HemaHexa/New-finance.git
+FILES FOUND: 2
+
+FILE: news_20261111T121717065202Z_3db0d16c.parquet
+RECORDS: 1
+SCHEMA: kafka_key: string
+raw_json: string
+topic: string
+partition: int32
+offset: int64
+kafka_ts: timestamp[ms, tz=UTC]
+
+FILE: news_20261111T140258714551Z_b912528c.parquet
+RECORDS: 13
+SCHEMA: kafka_key: string
+raw_json: string
+topic: string
+partition: int32
+offset: int64
+kafka_ts: timestamp[ms, tz=UTC]
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline>    
