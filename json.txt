@@ -1,475 +1,376 @@
 
-import torch
-
+import hashlib
+import sys
+import os
 from pathlib import Path
 
-from transformers import (
-    AutoTokenizer,
-    AutoModelForSequenceClassification
+# --------------------------------------------------
+# 1. PYSPARK CONFIGURATION FOR WINDOWS
+# --------------------------------------------------
+
+os.environ["PYSPARK_PYTHON"] = sys.executable
+os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
+
+
+# --------------------------------------------------
+# 2. IMPORT REQUIRED MODULES
+# --------------------------------------------------
+
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, trim, lit
+
+from read_bronze import read_new_bronze
+from deduplicate_news import deduplicate_news
+from validate_news import validate_news
+from clean_news import clean_news
+from extract_tickers import extract_tickers
+from sentiment_analysis import analyse_sentiment
+
+from checkpoint_manager import (
+    load_processed_files,
+    save_processed_files,
+    load_processed_article_ids,
+    save_processed_article_ids
 )
 
-from pyspark.sql import functions as F
-from pyspark.sql.types import StringType, DoubleType
+from safe_output_writer import (
+    write_batch_outputs,
+    create_commit_marker,
+    recover_checkpoints
+)
 
 
 # --------------------------------------------------
-# 1. PROJECT PATHS AND CONFIGURATION
+# 3. GENERATE A STABLE BATCH ID
 # --------------------------------------------------
 
-PROJECT_FOLDER = Path(__file__).resolve().parents[1]
+def generate_batch_id(bronze_files):
 
-MODEL_PATH = PROJECT_FOLDER / "models" / "finbert"
+    filenames = sorted(
+        Path(file).name
+        for file in bronze_files
+    )
 
-BATCH_SIZE = 8
-MAX_LENGTH = 512
+    file_string = "|".join(filenames)
+
+    batch_hash = hashlib.sha256(
+        file_string.encode("utf-8")
+    ).hexdigest()[:16]
+
+    return f"batch_{batch_hash}"
 
 
 # --------------------------------------------------
-# 2. LOAD FINBERT MODEL
+# 4. GET ARTICLE IDS FROM A DATAFRAME
 # --------------------------------------------------
 
-def load_finbert():
+def get_article_ids(news_df):
 
-    print("\n========== LOADING FINBERT ==========")
+    if news_df is None:
+        return set()
 
-    required_files = [
-        "config.json",
-        "model.safetensors",
-        "tokenizer_config.json",
-        "special_tokens_map.json",
-        "vocab.txt"
-    ]
-
-    missing_files = [
-        filename
-        for filename in required_files
-        if not (MODEL_PATH / filename).exists()
-    ]
-
-    if missing_files:
-        raise FileNotFoundError(
-            f"Missing FinBERT model files: {missing_files}"
+    rows = (
+        news_df
+        .select("article_id")
+        .where(
+            col("article_id").isNotNull()
+            & (trim(col("article_id")) != "")
         )
-
-    # Select CPU or GPU.
-    device = torch.device(
-        "cuda" if torch.cuda.is_available() else "cpu"
+        .distinct()
+        .collect()
     )
 
-    print("Using device:", device)
-
-    # Load tokenizer.
-    tokenizer = AutoTokenizer.from_pretrained(
-        str(MODEL_PATH),
-        local_files_only=True
-    )
-
-    print("Tokenizer loaded successfully.")
-
-    # Load model.
-    model = AutoModelForSequenceClassification.from_pretrained(
-        str(MODEL_PATH),
-        local_files_only=True
-    )
-
-    model.to(device)
-    model.eval()
-
-    print("FinBERT model loaded successfully!")
-
-    # Read sentiment labels from model configuration.
-    id2label = model.config.id2label
-
-    labels = {
-        str(
-            id2label.get(
-                index,
-                id2label.get(str(index), f"LABEL_{index}")
-            )
-        ).lower(): index
-        for index in range(model.config.num_labels)
+    return {
+        row["article_id"]
+        for row in rows
     }
 
-    print("\nModel sentiment labels:")
-    print(labels)
 
-    required_labels = {
-        "positive",
-        "negative",
-        "neutral"
+# --------------------------------------------------
+# 5. ADD EMPTY SENTIMENT COLUMNS
+# --------------------------------------------------
+
+def add_empty_sentiment_columns(dataframe):
+
+    # These names match sentiment_analysis.py.
+    sentiment_columns = {
+        "sentiment": "string",
+        "positive_score": "double",
+        "negative_score": "double",
+        "neutral_score": "double",
+        "sentiment_score": "double"
     }
 
-    if not required_labels.issubset(labels):
-        raise ValueError(
-            f"Unexpected FinBERT labels: {labels}"
-        )
+    for column_name, data_type in sentiment_columns.items():
 
-    return tokenizer, model, device, labels
+        if column_name not in dataframe.columns:
 
-
-# --------------------------------------------------
-# 3. BATCH SENTIMENT ANALYSIS
-# --------------------------------------------------
-
-def analyse_batch(
-    news_texts,
-    tokenizer,
-    model,
-    device,
-    labels
-):
-
-    # Convert multiple articles into tokens.
-    inputs = tokenizer(
-        news_texts,
-        return_tensors="pt",
-        padding=True,
-        truncation=True,
-        max_length=MAX_LENGTH
-    )
-
-    # Move tensors to CPU or GPU.
-    inputs = {
-        key: value.to(device)
-        for key, value in inputs.items()
-    }
-
-    # Perform inference without gradient calculation.
-    with torch.inference_mode():
-
-        outputs = model(**inputs)
-
-        probabilities = torch.softmax(
-            outputs.logits,
-            dim=-1
-        )
-
-    probabilities = probabilities.cpu().tolist()
-
-    results = []
-
-    for article_probabilities in probabilities:
-
-        scores = {
-            label: article_probabilities[index]
-            for label, index in labels.items()
-        }
-
-        positive_score = scores["positive"]
-        negative_score = scores["negative"]
-        neutral_score = scores["neutral"]
-
-        sentiment = max(
-            ("positive", "negative", "neutral"),
-            key=lambda label: scores[label]
-        )
-
-        sentiment_score = (
-            positive_score - negative_score
-        )
-
-        results.append({
-
-            "sentiment": sentiment,
-
-            "positive_score": positive_score,
-
-            "negative_score": negative_score,
-
-            "neutral_score": neutral_score,
-
-            "sentiment_score": sentiment_score
-
-        })
-
-    return results
-
-
-# --------------------------------------------------
-# 4. PREPARE NEWS TEXT
-# --------------------------------------------------
-
-def prepare_news_text(article):
-
-    text = article.get("text_for_analysis")
-
-    # Fallback to cleaned headline.
-    if not text or not str(text).strip():
-
-        text = article.get("cleaned_headline")
-
-    # Fallback to original headline.
-    if not text or not str(text).strip():
-
-        text = article.get("headline")
-
-    # No usable text.
-    if not text or not str(text).strip():
-
-        raise ValueError(
-            f"No usable text for article: "
-            f"{article.get('article_id')}"
-        )
-
-    return str(text)
-
-
-# --------------------------------------------------
-# 5. MAIN SENTIMENT ANALYSIS FUNCTION
-# --------------------------------------------------
-
-def analyse_sentiment(
-    news_with_tickers_df,
-    news_by_ticker_df
-):
-
-    print("\n========== STARTING FINBERT SENTIMENT ANALYSIS ==========")
-
-    # Get Spark session from the input DataFrame.
-    spark = news_with_tickers_df.sparkSession
-
-    # --------------------------------------------------
-    # 6. COLLECT ARTICLE-LEVEL RECORDS
-    # --------------------------------------------------
-
-    news_records = [
-        row.asDict(recursive=True)
-        for row in news_with_tickers_df.collect()
-    ]
-
-    if not news_records:
-        raise ValueError(
-            "No news articles available for sentiment analysis."
-        )
-
-    print(
-        "Total unique articles:",
-        len(news_records)
-    )
-
-    # --------------------------------------------------
-    # 7. LOAD FINBERT ONCE
-    # --------------------------------------------------
-
-    tokenizer, model, device, labels = load_finbert()
-
-    # --------------------------------------------------
-    # 8. PREPARE NEWS TEXT
-    # --------------------------------------------------
-
-    news_texts = [
-        prepare_news_text(article)
-        for article in news_records
-    ]
-
-    # --------------------------------------------------
-    # 9. RUN FINBERT IN BATCHES
-    # --------------------------------------------------
-
-    print("\nStarting FinBERT inference...")
-
-    sentiment_results = []
-
-    total_articles = len(news_texts)
-
-    for start in range(
-        0,
-        total_articles,
-        BATCH_SIZE
-    ):
-
-        end = min(
-            start + BATCH_SIZE,
-            total_articles
-        )
-
-        batch_texts = news_texts[start:end]
-
-        batch_results = analyse_batch(
-            batch_texts,
-            tokenizer,
-            model,
-            device,
-            labels
-        )
-
-        sentiment_results.extend(batch_results)
-
-        print(
-            f"Processed {end}/{total_articles} articles"
-        )
-
-    # --------------------------------------------------
-    # 10. ADD SENTIMENT TO ORIGINAL NEWS
-    # --------------------------------------------------
-
-    news_with_sentiment = []
-
-    for article, sentiment in zip(
-        news_records,
-        sentiment_results
-    ):
-
-        enriched_article = {
-            **article,
-            **sentiment
-        }
-
-        news_with_sentiment.append(
-            enriched_article
-        )
-
-    # --------------------------------------------------
-    # 11. CREATE ARTICLE SENTIMENT LOOKUP
-    # --------------------------------------------------
-
-    sentiment_lookup = {
-        article["article_id"]: {
-
-            "sentiment": article["sentiment"],
-
-            "positive_score": article["positive_score"],
-
-            "negative_score": article["negative_score"],
-
-            "neutral_score": article["neutral_score"],
-
-            "sentiment_score": article["sentiment_score"]
-
-        }
-        for article in news_with_sentiment
-    }
-
-    # --------------------------------------------------
-    # 12. ADD SENTIMENT TO NEWS BY TICKER
-    # --------------------------------------------------
-
-    ticker_records = [
-        row.asDict(recursive=True)
-        for row in news_by_ticker_df.collect()
-    ]
-
-    news_by_ticker_with_sentiment = []
-
-    for record in ticker_records:
-
-        article_id = record["article_id"]
-
-        sentiment = sentiment_lookup.get(article_id)
-
-        if sentiment is None:
-
-            raise ValueError(
-                f"Sentiment missing for article: {article_id}"
+            dataframe = dataframe.withColumn(
+                column_name,
+                lit(None).cast(data_type)
             )
 
-        enriched_record = {
-            **record,
-            **sentiment
-        }
+    return dataframe
 
-        news_by_ticker_with_sentiment.append(
-            enriched_record
-        )
 
-    # --------------------------------------------------
-    # 13. CONVERT RESULTS INTO SPARK DATAFRAMES
-    # --------------------------------------------------
+# --------------------------------------------------
+# 6. MAIN SILVER PIPELINE
+# --------------------------------------------------
 
-    article_sentiment_df = spark.createDataFrame(
-        news_with_sentiment
+def run_silver_pipeline():
+
+    print("\n")
+    print("================================================")
+    print("          STARTING SILVER NEWS PIPELINE")
+    print("================================================")
+
+    spark = (
+        SparkSession.builder
+        .appName("SilverNewsPipeline")
+        .master("local[*]")
+        .getOrCreate()
     )
 
-    if news_by_ticker_with_sentiment:
+    try:
 
-        ticker_sentiment_df = spark.createDataFrame(
-            news_by_ticker_with_sentiment
+        # ------------------------------------------
+        # STEP 1: RECOVER CHECKPOINTS
+        # ------------------------------------------
+
+        print("\n========== STEP 1: CHECKPOINT RECOVERY ==========")
+
+        recover_checkpoints()
+
+        # ------------------------------------------
+        # STEP 2: READ NEW BRONZE FILES
+        # ------------------------------------------
+
+        print("\n========== STEP 2: READ BRONZE ==========")
+
+        news_df, new_files = read_new_bronze(spark)
+
+        if not new_files:
+
+            print("\nNo new Bronze files found.")
+            print("Nothing to process.")
+
+            return
+
+        bronze_filenames = sorted(
+            Path(file).name
+            for file in new_files
         )
 
-    else:
+        print("New Bronze files:", len(bronze_filenames))
 
-        # Preserve the original schema when there are no
-        # article-ticker mappings.
-        ticker_sentiment_df = (
+        for filename in bronze_filenames:
+            print(" -", filename)
+
+        batch_id = generate_batch_id(bronze_filenames)
+
+        print("\nBatch ID:", batch_id)
+
+        # ------------------------------------------
+        # STEP 3: HANDLE EMPTY BRONZE FILES
+        # ------------------------------------------
+
+        if news_df is None:
+
+            print("\nNo records found in the new Bronze files.")
+
+            create_commit_marker(
+                batch_id=batch_id,
+                bronze_files=bronze_filenames,
+                processed_article_ids=[]
+            )
+
+            recover_checkpoints()
+
+            print("Empty batch committed successfully.")
+
+            return
+
+        # ------------------------------------------
+        # STEP 4: ARTICLE-LEVEL DEDUPLICATION
+        # ------------------------------------------
+
+        print("\n========== STEP 3: DEDUPLICATION ==========")
+
+        unique_new_df, missing_id_df = deduplicate_news(
+            news_df
+        )
+
+        # Keep missing-ID records so validation can
+        # route them to the DLQ.
+        candidates_df = unique_new_df.unionByName(
+            missing_id_df,
+            allowMissingColumns=True
+        )
+
+        candidate_count = candidates_df.count()
+
+        print("Records proceeding to validation:", candidate_count)
+
+        # Collect IDs before validation.
+        # They will only be checkpointed after a successful commit.
+        batch_article_ids = get_article_ids(candidates_df)
+
+        # ------------------------------------------
+        # STEP 5: VALIDATION
+        # ------------------------------------------
+
+        print("\n========== STEP 4: VALIDATION ==========")
+
+        valid_df, invalid_df = validate_news(
+            candidates_df
+        )
+
+        valid_count = valid_df.count()
+        invalid_count = invalid_df.count()
+
+        print("Valid articles:", valid_count)
+        print("Invalid articles:", invalid_count)
+
+        # ------------------------------------------
+        # STEP 6: HTML CLEANING
+        # ------------------------------------------
+
+        print("\n========== STEP 5: HTML CLEANING ==========")
+
+        cleaned_df = clean_news(valid_df)
+
+        # ------------------------------------------
+        # STEP 7: TICKER EXTRACTION
+        # ------------------------------------------
+
+        print("\n========== STEP 6: TICKER EXTRACTION ==========")
+
+        (
+            news_with_tickers_df,
             news_by_ticker_df
-            .withColumn(
-                "sentiment",
-                F.lit(None).cast(StringType())
+        ) = extract_tickers(cleaned_df)
+
+        # ------------------------------------------
+        # STEP 8: FINBERT SENTIMENT ANALYSIS
+        # ------------------------------------------
+
+        print("\n========== STEP 7: FINBERT SENTIMENT ==========")
+
+        if valid_count > 0:
+
+            (
+                news_with_sentiment_df,
+                news_by_ticker_with_sentiment_df
+            ) = analyse_sentiment(
+                news_with_tickers_df,
+                news_by_ticker_df
             )
-            .withColumn(
-                "positive_score",
-                F.lit(None).cast(DoubleType())
+
+        else:
+
+            print("No valid articles. Skipping FinBERT.")
+
+            news_with_sentiment_df = (
+                add_empty_sentiment_columns(
+                    news_with_tickers_df
+                )
             )
-            .withColumn(
-                "negative_score",
-                F.lit(None).cast(DoubleType())
+
+            news_by_ticker_with_sentiment_df = (
+                add_empty_sentiment_columns(
+                    news_by_ticker_df
+                )
             )
-            .withColumn(
-                "neutral_score",
-                F.lit(None).cast(DoubleType())
-            )
-            .withColumn(
-                "sentiment_score",
-                F.lit(None).cast(DoubleType())
-            )
+
+        # ------------------------------------------
+        # STEP 9: WRITE SILVER AND DLQ OUTPUTS
+        # ------------------------------------------
+
+        print("\n========== STEP 8: WRITE OUTPUTS ==========")
+
+        committed = write_batch_outputs(
+            batch_id=batch_id,
+            news_with_sentiment_df=news_with_sentiment_df,
+            news_by_ticker_with_sentiment_df=news_by_ticker_with_sentiment_df,
+            invalid_df=invalid_df,
+            bronze_files=bronze_filenames,
+            processed_article_ids=batch_article_ids
         )
 
-    # --------------------------------------------------
-    # 14. DISPLAY ARTICLE-LEVEL RESULTS
-    # --------------------------------------------------
+        # ------------------------------------------
+        # STEP 10: UPDATE CHECKPOINTS
+        # ------------------------------------------
 
-    print("\n========== ARTICLE-LEVEL SENTIMENT ==========")
+        print("\n========== STEP 9: UPDATE CHECKPOINTS ==========")
 
-    article_sentiment_df.select(
-        "article_id",
-        "cleaned_headline",
-        "matched_tickers",
-        "sentiment",
-        "positive_score",
-        "negative_score",
-        "neutral_score",
-        "sentiment_score"
-    ).show(
-        truncate=False
-    )
+        if committed:
 
-    # --------------------------------------------------
-    # 15. DISPLAY TICKER-LEVEL RESULTS
-    # --------------------------------------------------
+            processed_files = load_processed_files()
 
-    print("\n========== TICKER-LEVEL SENTIMENT ==========")
+            processed_files.update(
+                bronze_filenames
+            )
 
-    ticker_sentiment_df.select(
-        "article_id",
-        "ticker",
-        "sentiment",
-        "sentiment_score"
-    ).show(
-        truncate=False
-    )
+            save_processed_files(
+                processed_files
+            )
 
-    # --------------------------------------------------
-    # 16. FINAL SUMMARY
-    # --------------------------------------------------
+            processed_ids = load_processed_article_ids()
 
-    print("\n========================================")
-    print("FINBERT SENTIMENT ANALYSIS COMPLETED")
-    print("========================================")
+            processed_ids.update(
+                batch_article_ids
+            )
 
-    print(
-        "Articles processed:",
-        len(news_with_sentiment)
-    )
+            save_processed_article_ids(
+                processed_ids
+            )
 
-    print(
-        "Article-ticker records:",
-        len(news_by_ticker_with_sentiment)
-    )
+            print("Checkpoint files updated successfully.")
 
-    print("\nSentiment analysis completed successfully.")
+        else:
 
-    # Return both DataFrames to the main pipeline.
-    return (
-        article_sentiment_df,
-        ticker_sentiment_df
-    )
+            print("Batch already committed.")
+
+            recover_checkpoints()
+
+        # ------------------------------------------
+        # STEP 11: FINAL SUMMARY
+        # ------------------------------------------
+
+        print("\n")
+        print("================================================")
+        print("          SILVER NEWS PIPELINE COMPLETED")
+        print("================================================")
+
+        print("Batch ID:", batch_id)
+        print("Bronze files processed:", len(bronze_filenames))
+        print("Articles considered:", candidate_count)
+        print("Valid articles:", valid_count)
+        print("Invalid articles:", invalid_count)
+        print("Article IDs checkpointed:", len(batch_article_ids))
+
+    except Exception as error:
+
+        print("\n")
+        print("================================================")
+        print("          SILVER NEWS PIPELINE FAILED")
+        print("================================================")
+
+        print("Error:", str(error))
+
+        raise
+
+    finally:
+
+        spark.stop()
+
+        print("\nSpark session stopped.")
+
+
+# --------------------------------------------------
+# 12. EXECUTE PIPELINE
+# --------------------------------------------------
+
+if __name__ == "__main__":
+
+    run_silver_pipeline()
