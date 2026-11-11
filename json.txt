@@ -1,9 +1,8 @@
 
+import json
 import shutil
+import re
 from pathlib import Path
-
-import pyarrow as pa
-import pyarrow.parquet as pq
 
 
 # --------------------------------------------------
@@ -12,155 +11,236 @@ import pyarrow.parquet as pq
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-SILVER_PATH = (
-    PROJECT_ROOT
-    / "silver_news"
-    / "data"
-    / "silver"
-)
+DATA_PATH = PROJECT_ROOT / "silver_news" / "data"
 
-NEWS_OUTPUT_PATH = SILVER_PATH / "news"
+STAGING_PATH = DATA_PATH / "_staging"
 
-NEWS_BY_TICKER_OUTPUT_PATH = (
-    SILVER_PATH / "news_by_ticker"
-)
+SILVER_PATH = DATA_PATH / "silver"
+
+NEWS_PATH = SILVER_PATH / "news"
+
+NEWS_BY_TICKER_PATH = SILVER_PATH / "news_by_ticker"
+
+DLQ_PATH = DATA_PATH / "processed" / "dead_letter"
+
+CHECKPOINT_PATH = DATA_PATH / "checkpoints"
+
+COMMITTED_BATCHES_PATH = CHECKPOINT_PATH / "committed_batches"
 
 
 # --------------------------------------------------
-# 2. SAVE DATAFRAME AS PARQUET
+# 2. CHECK WHETHER BATCH IS ALREADY COMMITTED
 # --------------------------------------------------
 
-def save_dataframe_as_parquet(dataframe, output_path):
+def is_batch_committed(batch_id):
 
-    print(f"\nWriting output: {output_path}")
+    marker_path = (
+        COMMITTED_BATCHES_PATH
+        / f"{batch_id}.json"
+    )
 
-    # Convert Spark DataFrame into Python records.
-    records = [
-        row.asDict(recursive=True)
-        for row in dataframe.collect()
-    ]
+    return marker_path.exists()
 
-    if not records:
-        print("No records available. Creating empty output is skipped.")
-        return 0
 
-    # Convert records into an Arrow table.
-    table = pa.Table.from_pylist(records)
+# --------------------------------------------------
+# 3. WRITE A SPARK DATAFRAME TO STAGING
+# --------------------------------------------------
 
-    # Create output folder.
-    output_path.mkdir(
+def write_dataframe(dataframe, output_path):
+
+    output_path.parent.mkdir(
         parents=True,
         exist_ok=True
     )
 
-    # Write Parquet file.
-    parquet_file = output_path / "part-00000.parquet"
-
-    pq.write_table(
-        table,
-        parquet_file,
-        compression="snappy"
-    )
-
-    print("Saved successfully:", parquet_file)
-    print("Records written:", len(records))
-
-    return len(records)
-
-
-# --------------------------------------------------
-# 3. WRITE FINAL SILVER OUTPUTS
-# --------------------------------------------------
-
-def write_silver_outputs(
-    news_with_sentiment_df,
-    news_by_ticker_with_sentiment_df
-):
-
-    print("\n========== WRITING FINAL SILVER OUTPUTS ==========")
-
-    # Save article-level Silver data.
-    news_count = save_dataframe_as_parquet(
-        news_with_sentiment_df,
-        NEWS_OUTPUT_PATH
-    )
-
-    # Save article-ticker-level Silver data.
-    ticker_count = save_dataframe_as_parquet(
-        news_by_ticker_with_sentiment_df,
-        NEWS_BY_TICKER_OUTPUT_PATH
-    )
-
-    # --------------------------------------------------
-    # 4. FINAL SUMMARY
-    # --------------------------------------------------
-
-    print("\n========================================")
-    print("SILVER OUTPUT GENERATION COMPLETED")
-    print("========================================")
-
-    print("Unique articles written:", news_count)
-
-    print("Article-ticker records written:", ticker_count)
-
-    print("\nFinal output locations:")
-
-    print("1.", NEWS_OUTPUT_PATH)
-
-    print("2.", NEWS_BY_TICKER_OUTPUT_PATH)
-
-    return news_count, ticker_count
-
-
-
-from pathlib import Path
-
-
-# --------------------------------------------------
-# 1. OUTPUT PATH
-# --------------------------------------------------
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
-DLQ_PATH = (
-    PROJECT_ROOT
-    / "silver_news"
-    / "data"
-    / "processed"
-    / "dead_letter"
-)
-
-
-# --------------------------------------------------
-# 2. WRITE INVALID RECORDS
-# --------------------------------------------------
-
-def write_dead_letter(invalid_df, output_path=DLQ_PATH):
-
-    print("\n========== WRITING DEAD LETTER RECORDS ==========")
-
-    # Count invalid records.
-    invalid_count = invalid_df.count()
-
-    if invalid_count == 0:
-        print("No invalid records. DLQ write skipped.")
-        return 0
-
-    # Create output directory.
-    output_path = Path(output_path)
-    output_path.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    # Append invalid records as Parquet.
     (
-        invalid_df.write
-        .mode("append")
+        dataframe.write
+        .mode("errorifexists")
         .parquet(str(output_path))
     )
 
-    print("Invalid records written:", invalid_count)
-    print("DLQ location:", output_path)
 
-    return invalid_count
+# --------------------------------------------------
+# 4. COMMIT BATCH MARKER
+# --------------------------------------------------
+
+def create_commit_marker(batch_id):
+
+    COMMITTED_BATCHES_PATH.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    marker_path = (
+        COMMITTED_BATCHES_PATH
+        / f"{batch_id}.json"
+    )
+
+    temporary_path = marker_path.with_suffix(".tmp")
+
+    marker_data = {
+        "batch_id": batch_id,
+        "status": "COMMITTED"
+    }
+
+    with open(
+        temporary_path,
+        "w",
+        encoding="utf-8"
+    ) as file:
+
+        json.dump(
+            marker_data,
+            file,
+            indent=4
+        )
+
+    temporary_path.replace(marker_path)
+
+
+# --------------------------------------------------
+# 5. WRITE ALL BATCH OUTPUTS SAFELY
+# --------------------------------------------------
+
+def write_batch_outputs(
+    batch_id,
+    news_with_sentiment_df,
+    news_by_ticker_with_sentiment_df,
+    invalid_df
+):
+
+    print("\n========== SAFE BATCH WRITING ==========")
+
+    # Validate batch ID to keep paths predictable.
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", batch_id):
+        raise ValueError("Invalid batch ID")
+
+    # Avoid writing a batch that is already committed.
+    if is_batch_committed(batch_id):
+
+        print("Batch already committed:", batch_id)
+
+        return False
+
+    # Each batch gets its own output directories.
+    staging_batch = STAGING_PATH / batch_id
+
+    final_news = NEWS_PATH / f"batch_id={batch_id}"
+
+    final_ticker = (
+        NEWS_BY_TICKER_PATH / f"batch_id={batch_id}"
+    )
+
+    final_dlq = DLQ_PATH / f"batch_id={batch_id}"
+
+    final_paths = [
+        final_news,
+        final_ticker,
+        final_dlq
+    ]
+
+    # Remove leftovers from an earlier incomplete attempt.
+    if staging_batch.exists():
+        shutil.rmtree(staging_batch)
+
+    for path in final_paths:
+        if path.exists():
+            shutil.rmtree(path)
+
+    staging_batch.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    staged_news = staging_batch / "news"
+
+    staged_ticker = staging_batch / "news_by_ticker"
+
+    staged_dlq = staging_batch / "dead_letter"
+
+    try:
+
+        # ------------------------------------------
+        # A. WRITE ARTICLE-LEVEL SILVER DATA
+        # ------------------------------------------
+
+        print("\nWriting article-level Silver data...")
+
+        write_dataframe(
+            news_with_sentiment_df,
+            staged_news
+        )
+
+        # ------------------------------------------
+        # B. WRITE TICKER-LEVEL SILVER DATA
+        # ------------------------------------------
+
+        print("\nWriting ticker-level Silver data...")
+
+        write_dataframe(
+            news_by_ticker_with_sentiment_df,
+            staged_ticker
+        )
+
+        # ------------------------------------------
+        # C. WRITE DEAD LETTER RECORDS
+        # ------------------------------------------
+
+        print("\nWriting DLQ records...")
+
+        write_dataframe(
+            invalid_df,
+            staged_dlq
+        )
+
+        # ------------------------------------------
+        # D. MOVE STAGED OUTPUTS TO FINAL PATHS
+        # ------------------------------------------
+
+        NEWS_PATH.mkdir(parents=True, exist_ok=True)
+
+        NEWS_BY_TICKER_PATH.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
+        DLQ_PATH.mkdir(parents=True, exist_ok=True)
+
+        staged_news.rename(final_news)
+
+        staged_ticker.rename(final_ticker)
+
+        staged_dlq.rename(final_dlq)
+
+        # ------------------------------------------
+        # E. COMMIT MARKER — LAST STEP
+        # ------------------------------------------
+
+        create_commit_marker(batch_id)
+
+        print("\n========================================")
+        print("BATCH COMMITTED SUCCESSFULLY")
+        print("========================================")
+
+        print("Batch ID:", batch_id)
+        print("News output:", final_news)
+        print("Ticker output:", final_ticker)
+        print("DLQ output:", final_dlq)
+
+        return True
+
+    except Exception:
+
+        # Remove partial outputs if the batch failed.
+        for path in final_paths:
+
+            if path.exists():
+                shutil.rmtree(path)
+
+        raise
+
+    finally:
+
+        # Remove remaining staging data.
+        if staging_batch.exists():
+            shutil.rmtree(staging_batch)
