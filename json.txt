@@ -1,383 +1,140 @@
-'''import os
-import sys
-from pathlib import Path
- 
-# Configure Spark to use our virtual environment's Python
-os.environ["PYSPARK_PYTHON"] = sys.executable
-os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
- 
-from pyspark.sql import SparkSession
- 
-# Locate the existing Bronze JSON file
-project_folder = Path(__file__).resolve().parents[1]
-input_file = project_folder / "data" / "sample_bronze_news.json"
- 
-spark = None
- 
-try:
-    # Create Spark session
-    spark = (
-        SparkSession.builder
-        .appName("SilverNewsDeduplication")
-        .master("local[*]")
-        .getOrCreate()
-    )
- 
-    # Read Bronze news records
-    df = (
-        spark.read
-        .option("multiLine", "true")
-        .json(str(input_file))
-    )
- 
-    # Display original records
-    print("\n========== BEFORE DEDUPLICATION ==========")
-    df.show(truncate=False)
- 
-    total_before = df.count()
-    print("Total records before:", total_before)
- 
-    # Remove duplicate records using article_id
-    deduplicated_df = df.dropDuplicates(["article_id"])
- 
-    # Display deduplicated records
-    print("\n========== AFTER DEDUPLICATION ==========")
-    deduplicated_df.show(truncate=False)
- 
-    total_after = deduplicated_df.count()
-    duplicates_removed = total_before - total_after
- 
-    # Display summary
-    print("\n========== DEDUPLICATION SUMMARY ==========")
-    print("Total records before:", total_before)
-    print("Total records after:", total_after)
-    print("Duplicates removed:", duplicates_removed)
- 
-except Exception as error:
-    print("\nDeduplication error:", error)
- 
-finally:
-    if spark is not None:
-        spark.stop()
-        print("\nSpark session stopped.")'''
-    
-
-
 
 import json
-import re
-import shutil
-import os
-import sys
 from pathlib import Path
 
- 
-import pyarrow as pa
-import pyarrow.parquet as pq
- 
-from pyspark.sql import SparkSession, Window
 from pyspark.sql.functions import (
     col,
-    from_json,
+    trim,
     row_number,
     to_timestamp,
-    regexp_replace,
-    trim,
-    coalesce,
     desc_nulls_last,
     asc
 )
-from pyspark.sql.types import (
-    StructType,
-    StructField,
-    StringType
-)
- 
-os.environ["PYSPARK_PYTHON"] = sys.executable
-os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
+from pyspark.sql.window import Window
+
+
 # --------------------------------------------------
 # 1. PROJECT PATHS
 # --------------------------------------------------
- 
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
- 
-BRONZE_PATH = (
-    PROJECT_ROOT / "silver_news" / "data"
-    / "simulated_bronze" / "news"
+
+CHECKPOINT_DIR = (
+    PROJECT_ROOT
+    / "silver_news"
+    / "data"
+    / "checkpoints"
 )
- 
-OUTPUT_PATH = (
-    PROJECT_ROOT / "silver_news" / "data"
-    / "processed" / "deduplicated_news"
+
+PROCESSED_IDS_PATH = (
+    CHECKPOINT_DIR
+    / "processed_article_ids.json"
 )
- 
- 
+
+
 # --------------------------------------------------
-# 2. CREATE SPARK SESSION
+# 2. LOAD PREVIOUSLY PROCESSED ARTICLE IDS
 # --------------------------------------------------
- 
-spark = (
-    SparkSession.builder
-    .appName("SilverNewsDeduplication")
-    .master("local[*]")
-    .getOrCreate()
-)
- 
-spark.sparkContext.setLogLevel("ERROR")
- 
- 
+
+def load_processed_article_ids():
+
+    if not PROCESSED_IDS_PATH.exists():
+        return set()
+
+    with open(
+        PROCESSED_IDS_PATH,
+        "r",
+        encoding="utf-8"
+    ) as file:
+
+        data = json.load(file)
+
+    return set(data.get("processed_article_ids", []))
+
+
 # --------------------------------------------------
-# 3. READ BRONZE PARQUET USING PYARROW
+# 3. ARTICLE-LEVEL DEDUPLICATION
 # --------------------------------------------------
- 
-print("\nReading Bronze news data...")
- 
-if not BRONZE_PATH.exists():
-    raise FileNotFoundError(
-        f"Bronze path not found: {BRONZE_PATH}"
+
+def deduplicate_news(news_df):
+
+    print("\n========== ARTICLE-LEVEL DEDUPLICATION ==========")
+
+    # Load article IDs processed in previous successful runs
+    processed_ids = load_processed_article_ids()
+
+    print("Previously processed article IDs:", len(processed_ids))
+
+    # Remove records with missing or empty article IDs
+    # These records will be handled by validation / DLQ.
+    identifiable_df = news_df.filter(
+        col("article_id").isNotNull()
+        & (trim(col("article_id")) != "")
     )
- 
-bronze_table = pq.read_table(BRONZE_PATH)
-bronze_records = bronze_table.to_pylist()
- 
-print("Total Bronze records:", len(bronze_records))
- 
- 
-# --------------------------------------------------
-# 4. PARSE RAW JSON
-# --------------------------------------------------
- 
-articles = []
- 
-for record in bronze_records:
- 
-    raw_json = record.get("raw_json")
- 
-    if not raw_json:
-        continue
- 
-    try:
-        article = json.loads(raw_json)
- 
-        # Support both current and older sample formats
-        full_text = article.get("full_text")
- 
-        if full_text is None:
-            full_text = article.get("body_html")
- 
-        articles.append({
-            "article_id": article.get("article_id"),
-            "published_at": article.get("published_at"),
-            "source": article.get("source"),
-            "headline": article.get("headline"),
-            "full_text": full_text,
-            "url": article.get("url"),
-            "ingested_at": article.get("ingested_at")
-        })
- 
-    except (json.JSONDecodeError, TypeError):
-        print("Skipping malformed JSON record")
- 
- 
-schema = StructType([
-    StructField("article_id", StringType(), True),
-    StructField("published_at", StringType(), True),
-    StructField("source", StringType(), True),
-    StructField("headline", StringType(), True),
-    StructField("full_text", StringType(), True),
-    StructField("url", StringType(), True),
-    StructField("ingested_at", StringType(), True)
-])
- 
-df = spark.createDataFrame(articles, schema=schema)
- 
- 
-# --------------------------------------------------
-# 5. VALIDATE NEWS
-# --------------------------------------------------
- 
-valid_condition = (
-    col("article_id").isNotNull()
-    & (trim(col("article_id")) != "")
-    & col("url").isNotNull()
-    & (trim(col("url")) != "")
-    & (
-        (
-            col("headline").isNotNull()
-            & (trim(col("headline")) != "")
+
+    missing_id_df = news_df.filter(
+        col("article_id").isNull()
+        | (trim(col("article_id")) == "")
+    )
+
+    # Remove articles already processed in earlier batches
+    if processed_ids:
+
+        new_df = identifiable_df.filter(
+            ~col("article_id").isin(list(processed_ids))
         )
-        |
-        (
-            col("full_text").isNotNull()
-            & (trim(col("full_text")) != "")
+
+        previously_processed_df = identifiable_df.filter(
+            col("article_id").isin(list(processed_ids))
+        )
+
+    else:
+
+        new_df = identifiable_df
+        previously_processed_df = identifiable_df.limit(0)
+
+    # Remove duplicate article IDs within the current batch
+    window_spec = (
+        Window
+        .partitionBy("article_id")
+        .orderBy(
+            desc_nulls_last(
+                to_timestamp(col("ingested_at"))
+            ),
+            asc(col("url")),
+            asc(col("headline"))
         )
     )
-)
- 
-valid_df = df.filter(valid_condition)
-invalid_df = df.filter(~valid_condition)
- 
-total_count = df.count()
-valid_count = valid_df.count()
-invalid_count = invalid_df.count()
- 
-print("\nValidation Results")
-print("------------------")
-print("Total records:", total_count)
-print("Valid records:", valid_count)
-print("Invalid records:", invalid_count)
- 
- 
-# --------------------------------------------------
-# 6. CLEAN HTML AND TEXT
-# --------------------------------------------------
- 
-def clean_text(column):
- 
-    cleaned = regexp_replace(
-        column,
-        r"<[^>]*>",
-        " "
-    )
- 
-    cleaned = regexp_replace(
-        cleaned,
-        r"&nbsp;|&#160;",
-        " "
-    )
- 
-    cleaned = regexp_replace(
-        cleaned,
-        r"&amp;",
-        "&"
-    )
- 
-    cleaned = regexp_replace(
-        cleaned,
-        r"&quot;",
-        '"'
-    )
- 
-    cleaned = regexp_replace(
-        cleaned,
-        r"&#39;|&apos;",
-        "'"
-    )
- 
-    cleaned = regexp_replace(
-        cleaned,
-        r"&lt;",
-        "<"
-    )
- 
-    cleaned = regexp_replace(
-        cleaned,
-        r"&gt;",
-        ">"
-    )
- 
-    cleaned = regexp_replace(
-        cleaned,
-        r"\s+",
-        " "
-    )
- 
-    return trim(cleaned)
- 
- 
-cleaned_df = (
-    valid_df
-    .withColumn(
-        "cleaned_headline",
-        clean_text(col("headline"))
-    )
-    .withColumn(
-        "cleaned_text",
-        clean_text(col("full_text"))
-    )
-    .withColumn(
-        "text_for_analysis",
-        trim(
-            coalesce(
-                col("cleaned_text"),
-                col("cleaned_headline")
-            )
+
+    unique_new_df = (
+        new_df
+        .withColumn(
+            "row_number",
+            row_number().over(window_spec)
         )
+        .filter(col("row_number") == 1)
+        .drop("row_number")
     )
-)
- 
-# If full_text is empty, use the headline.
-cleaned_df = cleaned_df.withColumn(
-    "text_for_analysis",
-    regexp_replace(
-        col("text_for_analysis"),
-        r"^\s*$",
-        ""
-    )
-)
- 
- 
-# --------------------------------------------------
-# 7. REMOVE DUPLICATES
-# --------------------------------------------------
- 
-window_spec = (
-    Window
-    .partitionBy("article_id")
-    .orderBy(
-        desc_nulls_last(
-            to_timestamp(col("ingested_at"))
-        ),
-        asc(col("url")),
-        asc(col("headline"))
-    )
-)
- 
-deduplicated_df = (
-    cleaned_df
-    .withColumn(
-        "row_number",
-        row_number().over(window_spec)
-    )
-    .filter(col("row_number") == 1)
-    .drop("row_number")
-)
- 
-unique_count = deduplicated_df.count()
-duplicates_removed = valid_count - unique_count
- 
-print("\nDeduplication Results")
-print("---------------------")
-print("Valid records:", valid_count)
-print("Duplicates removed:", duplicates_removed)
-print("Unique records:", unique_count)
- 
- 
-# --------------------------------------------------
-# 8. SAVE DEDUPLICATED PARQUET
-# --------------------------------------------------
- 
-records = [
-    row.asDict(recursive=True)
-    for row in deduplicated_df.collect()
-]
- 
-if OUTPUT_PATH.exists():
-    shutil.rmtree(OUTPUT_PATH)
- 
-OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
- 
-if records:
-    table = pa.Table.from_pylist(records)
- 
-    pq.write_table(
-        table,
-        OUTPUT_PATH / "part-00000.parquet"
-    )
- 
-print("\nDeduplicated data saved successfully!")
-print("Output:", OUTPUT_PATH)
- 
-deduplicated_df.show(truncate=False)
- 
-spark.stop()
+
+    # Display results
+    total_count = news_df.count()
+    missing_id_count = missing_id_df.count()
+    previously_processed_count = previously_processed_df.count()
+    current_batch_count = new_df.count()
+    unique_count = unique_new_df.count()
+
+    print("\nDeduplication Results")
+    print("---------------------")
+    print("Incoming records:", total_count)
+    print("Missing article IDs:", missing_id_count)
+    print("Already processed articles:", previously_processed_count)
+    print("Duplicate IDs within current batch:", current_batch_count - unique_count)
+    print("New unique articles:", unique_count)
+
+    return unique_new_df, missing_id_df
+
+
+# IMPORTANT:
+# This module does not save article IDs to the checkpoint.
+# The final pipeline runner will update the checkpoint
+# only after all outputs and DLQ records are written successfully.
