@@ -1,156 +1,107 @@
 
-import sys
-import shutil
-from pathlib import Path
-
 import torch
-import pyarrow as pa
-import pyarrow.parquet as pq
+
+from pathlib import Path
 
 from transformers import (
     AutoTokenizer,
     AutoModelForSequenceClassification
 )
 
+from pyspark.sql import functions as F
+from pyspark.sql.types import StringType, DoubleType
+
 
 # --------------------------------------------------
-# 1. PROJECT PATHS
+# 1. PROJECT PATHS AND CONFIGURATION
 # --------------------------------------------------
 
 PROJECT_FOLDER = Path(__file__).resolve().parents[1]
 
 MODEL_PATH = PROJECT_FOLDER / "models" / "finbert"
 
-INPUT_PATH = (
-    PROJECT_FOLDER / "data"
-    / "processed" / "news_with_tickers"
-)
-
-TICKER_INPUT_PATH = (
-    PROJECT_FOLDER / "data"
-    / "processed" / "news_by_ticker"
-)
-
-NEWS_OUTPUT_PATH = (
-    PROJECT_FOLDER / "data"
-    / "processed" / "news_with_sentiment"
-)
-
-TICKER_OUTPUT_PATH = (
-    PROJECT_FOLDER / "data"
-    / "processed" / "news_by_ticker_with_sentiment"
-)
-
-
-# --------------------------------------------------
-# 2. CONFIGURATION
-# --------------------------------------------------
-
 BATCH_SIZE = 8
 MAX_LENGTH = 512
 
 
 # --------------------------------------------------
-# 3. CHECK MODEL FILES
+# 2. LOAD FINBERT MODEL
 # --------------------------------------------------
 
-print("\nChecking local FinBERT model...")
+def load_finbert():
 
-required_files = [
-    "config.json",
-    "model.safetensors",
-    "tokenizer_config.json",
-    "special_tokens_map.json",
-    "vocab.txt"
-]
+    print("\n========== LOADING FINBERT ==========")
 
-missing_files = [
-    filename
-    for filename in required_files
-    if not (MODEL_PATH / filename).exists()
-]
+    required_files = [
+        "config.json",
+        "model.safetensors",
+        "tokenizer_config.json",
+        "special_tokens_map.json",
+        "vocab.txt"
+    ]
 
-if missing_files:
+    missing_files = [
+        filename
+        for filename in required_files
+        if not (MODEL_PATH / filename).exists()
+    ]
 
-    print("\nERROR: Missing model files:")
+    if missing_files:
+        raise FileNotFoundError(
+            f"Missing FinBERT model files: {missing_files}"
+        )
 
-    for filename in missing_files:
-        print("-", filename)
-
-    sys.exit(1)
-
-print("All FinBERT model files are available.")
-
-
-# --------------------------------------------------
-# 4. SELECT COMPUTING DEVICE
-# --------------------------------------------------
-
-DEVICE = torch.device(
-    "cuda" if torch.cuda.is_available() else "cpu"
-)
-
-print("\nUsing device:", DEVICE)
-
-
-# --------------------------------------------------
-# 5. LOAD FINBERT MODEL
-# --------------------------------------------------
-
-print("\nLoading FinBERT tokenizer...")
-
-tokenizer = AutoTokenizer.from_pretrained(
-    str(MODEL_PATH),
-    local_files_only=True
-)
-
-print("Tokenizer loaded successfully.")
-
-print("\nLoading FinBERT model...")
-
-model = AutoModelForSequenceClassification.from_pretrained(
-    str(MODEL_PATH),
-    local_files_only=True
-)
-
-model.to(DEVICE)
-model.eval()
-
-print("FinBERT model loaded successfully!")
-
-
-# --------------------------------------------------
-# 6. READ MODEL SENTIMENT LABELS
-# --------------------------------------------------
-
-id2label = model.config.id2label
-
-labels = {
-    str(id2label.get(
-        index,
-        id2label.get(str(index), f"LABEL_{index}")
-    )).lower(): index
-    for index in range(model.config.num_labels)
-}
-
-print("\nModel sentiment labels:")
-print(labels)
-
-required_labels = {"positive", "negative", "neutral"}
-
-if not required_labels.issubset(labels):
-    raise ValueError(
-        f"Unexpected FinBERT labels: {labels}"
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() else "cpu"
     )
 
+    print("Using device:", device)
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        str(MODEL_PATH),
+        local_files_only=True
+    )
+
+    model = AutoModelForSequenceClassification.from_pretrained(
+        str(MODEL_PATH),
+        local_files_only=True
+    )
+
+    model.to(device)
+    model.eval()
+
+    # Read label mapping from model configuration.
+    id2label = model.config.id2label
+
+    labels = {
+        str(
+            id2label.get(
+                index,
+                id2label.get(str(index), f"LABEL_{index}")
+            )
+        ).lower(): index
+        for index in range(model.config.num_labels)
+    }
+
+    required_labels = {"positive", "negative", "neutral"}
+
+    if not required_labels.issubset(labels):
+        raise ValueError(
+            f"Unexpected FinBERT labels: {labels}"
+        )
+
+    print("FinBERT loaded successfully!")
+    print("Sentiment labels:", labels)
+
+    return tokenizer, model, device, labels
+
 
 # --------------------------------------------------
-# 7. SENTIMENT ANALYSIS FUNCTION
+# 3. BATCH SENTIMENT ANALYSIS
 # --------------------------------------------------
 
-def analyse_batch(news_texts):
+def analyse_batch(news_texts, tokenizer, model, device, labels):
 
-    # Convert multiple articles into tokens.
     inputs = tokenizer(
         news_texts,
         return_tensors="pt",
@@ -159,13 +110,11 @@ def analyse_batch(news_texts):
         max_length=MAX_LENGTH
     )
 
-    # Move tensors to GPU or CPU.
     inputs = {
-        key: value.to(DEVICE)
+        key: value.to(device)
         for key, value in inputs.items()
     }
 
-    # Perform inference without gradient calculation.
     with torch.inference_mode():
 
         outputs = model(**inputs)
@@ -175,7 +124,6 @@ def analyse_batch(news_texts):
             dim=-1
         )
 
-    # Move predictions back to CPU.
     probabilities = probabilities.cpu().tolist()
 
     results = []
@@ -192,7 +140,7 @@ def analyse_batch(news_texts):
         neutral_score = scores["neutral"]
 
         sentiment = max(
-            required_labels,
+            ("positive", "negative", "neutral"),
             key=lambda label: scores[label]
         )
 
@@ -212,289 +160,246 @@ def analyse_batch(news_texts):
 
 
 # --------------------------------------------------
-# 8. READ NEWS WITH TICKERS
+# 4. PREPARE NEWS TEXT
 # --------------------------------------------------
 
-print("\nReading news with extracted tickers...")
-
-if not INPUT_PATH.exists():
-    raise FileNotFoundError(
-        f"Input path not found: {INPUT_PATH}"
-    )
-
-table = pq.read_table(INPUT_PATH)
-
-news_records = table.to_pylist()
-
-if not news_records:
-    raise ValueError("No news articles found.")
-
-print("Total articles:", len(news_records))
-
-
-# --------------------------------------------------
-# 9. PREPARE NEWS TEXT
-# --------------------------------------------------
-
-news_texts = []
-
-for article in news_records:
+def prepare_news_text(article):
 
     text = article.get("text_for_analysis")
 
-    # Fallback to headline if analysis text is unavailable.
     if not text or not str(text).strip():
-
         text = article.get("cleaned_headline")
 
     if not text or not str(text).strip():
-
         text = article.get("headline")
 
     if not text or not str(text).strip():
-
         raise ValueError(
             f"No usable text for article: "
             f"{article.get('article_id')}"
         )
 
-    news_texts.append(str(text))
+    return str(text)
 
 
 # --------------------------------------------------
-# 10. RUN FINBERT IN BATCHES
+# 5. MAIN SENTIMENT ANALYSIS FUNCTION
 # --------------------------------------------------
 
-print("\nStarting FinBERT sentiment analysis...")
+def analyse_sentiment(news_with_tickers_df, news_by_ticker_df):
 
-sentiment_results = []
+    print("\n========== STARTING SENTIMENT ANALYSIS ==========")
 
-total_articles = len(news_texts)
+    # Get Spark session from the input DataFrame.
+    spark = news_with_tickers_df.sparkSession
 
-for start in range(0, total_articles, BATCH_SIZE):
+    # Convert article-level records into Python dictionaries.
+    news_records = [
+        row.asDict(recursive=True)
+        for row in news_with_tickers_df.collect()
+    ]
 
-    end = min(
-        start + BATCH_SIZE,
-        total_articles
-    )
-
-    batch_texts = news_texts[start:end]
-
-    batch_results = analyse_batch(batch_texts)
-
-    sentiment_results.extend(batch_results)
-
-    print(
-        f"Processed {end}/{total_articles} articles"
-    )
-
-
-# --------------------------------------------------
-# 11. ADD SENTIMENT TO ARTICLE RECORDS
-# --------------------------------------------------
-
-news_with_sentiment = []
-
-for article, sentiment in zip(
-    news_records,
-    sentiment_results
-):
-
-    enriched_article = {
-        **article,
-        **sentiment
-    }
-
-    news_with_sentiment.append(enriched_article)
-
-
-# --------------------------------------------------
-# 12. DISPLAY SENTIMENT RESULTS
-# --------------------------------------------------
-
-print("\nFinBERT Sentiment Results")
-print("=========================")
-
-for article in news_with_sentiment:
-
-    print("\nArticle ID:", article["article_id"])
-
-    print(
-        "Headline:",
-        article.get("cleaned_headline")
-    )
-
-    print(
-        "Matched tickers:",
-        article.get("matched_tickers")
-    )
-
-    print(
-        "Sentiment:",
-        article["sentiment"]
-    )
-
-    print(
-        "Positive score:",
-        round(article["positive_score"], 4)
-    )
-
-    print(
-        "Negative score:",
-        round(article["negative_score"], 4)
-    )
-
-    print(
-        "Neutral score:",
-        round(article["neutral_score"], 4)
-    )
-
-    print(
-        "Sentiment score:",
-        round(article["sentiment_score"], 4)
-    )
-
-
-# --------------------------------------------------
-# 13. SAVE ARTICLE-LEVEL SENTIMENT DATA
-# --------------------------------------------------
-
-def save_parquet(records, output_path):
-
-    if output_path.exists():
-        shutil.rmtree(output_path)
-
-    output_path.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    if records:
-
-        table = pa.Table.from_pylist(records)
-
-        pq.write_table(
-            table,
-            output_path / "part-00000.parquet"
-        )
-
-    print("\nSaved successfully:")
-    print(output_path)
-
-
-save_parquet(
-    news_with_sentiment,
-    NEWS_OUTPUT_PATH
-)
-
-
-# --------------------------------------------------
-# 14. ADD SENTIMENT TO NEWS BY TICKER
-# --------------------------------------------------
-
-print("\nCreating sentiment-enriched news by ticker...")
-
-if not TICKER_INPUT_PATH.exists():
-    raise FileNotFoundError(
-        f"Ticker input path not found: {TICKER_INPUT_PATH}"
-    )
-
-ticker_table = pq.read_table(TICKER_INPUT_PATH)
-
-ticker_records = ticker_table.to_pylist()
-
-# Create article ID to sentiment mapping.
-sentiment_lookup = {
-    article["article_id"]: {
-        "sentiment": article["sentiment"],
-        "positive_score": article["positive_score"],
-        "negative_score": article["negative_score"],
-        "neutral_score": article["neutral_score"],
-        "sentiment_score": article["sentiment_score"]
-    }
-    for article in news_with_sentiment
-}
-
-news_by_ticker_with_sentiment = []
-
-for record in ticker_records:
-
-    article_id = record["article_id"]
-
-    sentiment = sentiment_lookup.get(article_id)
-
-    if sentiment is None:
+    if not news_records:
         raise ValueError(
-            f"Sentiment missing for article: {article_id}"
+            "No articles available for sentiment analysis."
         )
 
-    enriched_record = {
-        **record,
-        **sentiment
+    print("Total unique articles:", len(news_records))
+
+    # --------------------------------------------------
+    # 6. LOAD MODEL ONCE
+    # --------------------------------------------------
+
+    tokenizer, model, device, labels = load_finbert()
+
+    # --------------------------------------------------
+    # 7. PREPARE TEXT
+    # --------------------------------------------------
+
+    news_texts = [
+        prepare_news_text(article)
+        for article in news_records
+    ]
+
+    # --------------------------------------------------
+    # 8. RUN FINBERT IN BATCHES
+    # --------------------------------------------------
+
+    print("\nRunning FinBERT inference...")
+
+    sentiment_results = []
+
+    total_articles = len(news_texts)
+
+    for start in range(0, total_articles, BATCH_SIZE):
+
+        end = min(
+            start + BATCH_SIZE,
+            total_articles
+        )
+
+        batch_texts = news_texts[start:end]
+
+        batch_results = analyse_batch(
+            batch_texts,
+            tokenizer,
+            model,
+            device,
+            labels
+        )
+
+        sentiment_results.extend(batch_results)
+
+        print(
+            f"Processed {end}/{total_articles} articles"
+        )
+
+    # --------------------------------------------------
+    # 9. ENRICH ARTICLE-LEVEL NEWS
+    # --------------------------------------------------
+
+    news_with_sentiment = []
+
+    for article, sentiment in zip(
+        news_records,
+        sentiment_results
+    ):
+
+        enriched_article = {
+            **article,
+            **sentiment
+        }
+
+        news_with_sentiment.append(enriched_article)
+
+    print("\nArticle-level sentiment completed.")
+
+    # --------------------------------------------------
+    # 10. CREATE SENTIMENT LOOKUP
+    # --------------------------------------------------
+
+    sentiment_lookup = {
+        article["article_id"]: {
+            "sentiment": article["sentiment"],
+            "positive_score": article["positive_score"],
+            "negative_score": article["negative_score"],
+            "neutral_score": article["neutral_score"],
+            "sentiment_score": article["sentiment_score"]
+        }
+        for article in news_with_sentiment
     }
 
-    news_by_ticker_with_sentiment.append(
-        enriched_record
+    # --------------------------------------------------
+    # 11. ENRICH NEWS BY TICKER
+    # --------------------------------------------------
+
+    ticker_records = [
+        row.asDict(recursive=True)
+        for row in news_by_ticker_df.collect()
+    ]
+
+    news_by_ticker_with_sentiment = []
+
+    for record in ticker_records:
+
+        article_id = record["article_id"]
+
+        sentiment = sentiment_lookup.get(article_id)
+
+        if sentiment is None:
+            raise ValueError(
+                f"Sentiment missing for article: {article_id}"
+            )
+
+        enriched_record = {
+            **record,
+            **sentiment
+        }
+
+        news_by_ticker_with_sentiment.append(
+            enriched_record
+        )
+
+    # --------------------------------------------------
+    # 12. CONVERT RESULTS BACK TO SPARK DATAFRAMES
+    # --------------------------------------------------
+
+    article_sentiment_df = spark.createDataFrame(
+        news_with_sentiment
     )
 
+    if news_by_ticker_with_sentiment:
 
-save_parquet(
-    news_by_ticker_with_sentiment,
-    TICKER_OUTPUT_PATH
-)
+        ticker_sentiment_df = spark.createDataFrame(
+            news_by_ticker_with_sentiment
+        )
 
+    else:
 
-# --------------------------------------------------
-# 15. FINAL SUMMARY
-# --------------------------------------------------
+        # Preserve the original schema when no tickers match.
+        ticker_sentiment_df = (
+            news_by_ticker_df
+            .withColumn(
+                "sentiment",
+                F.lit(None).cast(StringType())
+            )
+            .withColumn(
+                "positive_score",
+                F.lit(None).cast(DoubleType())
+            )
+            .withColumn(
+                "negative_score",
+                F.lit(None).cast(DoubleType())
+            )
+            .withColumn(
+                "neutral_score",
+                F.lit(None).cast(DoubleType())
+            )
+            .withColumn(
+                "sentiment_score",
+                F.lit(None).cast(DoubleType())
+            )
+        )
 
-print("\n========================================")
-print("FINBERT SENTIMENT ANALYSIS COMPLETED")
-print("========================================")
+    # --------------------------------------------------
+    # 13. DISPLAY SUMMARY
+    # --------------------------------------------------
 
-print(
-    "Articles processed:",
-    len(news_with_sentiment)
-)
+    print("\n========== SENTIMENT ANALYSIS SUMMARY ==========")
 
-print(
-    "Article-ticker records:",
-    len(news_by_ticker_with_sentiment)
-)
+    print(
+        "Articles processed:",
+        len(news_with_sentiment)
+    )
 
-print("\nOutput folders:")
+    print(
+        "Article-ticker records:",
+        len(news_by_ticker_with_sentiment)
+    )
 
-print("1.", NEWS_OUTPUT_PATH)
+    print("\nARTICLE-LEVEL SENTIMENT:")
 
-print("2.", TICKER_OUTPUT_PATH)
+    article_sentiment_df.select(
+        "article_id",
+        "cleaned_headline",
+        "matched_tickers",
+        "sentiment",
+        "positive_score",
+        "negative_score",
+        "neutral_score",
+        "sentiment_score"
+    ).show(truncate=False)
 
+    print("\nTICKER-LEVEL SENTIMENT:")
 
-print("\n========== FINBERT ANALYSIS RESULTS ==========")
+    ticker_sentiment_df.select(
+        "article_id",
+        "ticker",
+        "sentiment",
+        "sentiment_score"
+    ).show(truncate=False)
 
-results = pq.read_table(NEWS_OUTPUT_PATH).to_pandas()
+    print("\nFINBERT SENTIMENT ANALYSIS COMPLETED!")
 
-columns_to_display = [
-    "article_id",
-    "headline",
-    "matched_tickers",
-    "sentiment",
-    "positive_score",
-    "negative_score",
-    "neutral_score",
-    "sentiment_score"
-]
-
-print(results[columns_to_display].to_string(index=False))
-
-print("\n========== TOTAL SENTIMENT COUNTS ==========")
-print(results["sentiment"].value_counts())
-
-print("\n========== TICKER-WISE SENTIMENT ==========")
-
-ticker_results = pq.read_table(TICKER_OUTPUT_PATH).to_pandas()
-
-print(
-    ticker_results[
-        ["headline", "ticker", "sentiment", "sentiment_score"]
-    ].to_string(index=False)
-)
+    # Return both DataFrames to the pipeline runner.
+    return article_sentiment_df, ticker_sentiment_df
