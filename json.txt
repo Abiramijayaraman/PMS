@@ -1,198 +1,80 @@
 
 import os
 import sys
-from pathlib import Path
-from datetime import timezone
 
-import pyarrow.parquet as pq
-
+# Configure Python for Spark
 os.environ["PYSPARK_PYTHON"] = sys.executable
 os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
 
-from pyspark.sql.functions import col, from_json
-from pyspark.sql.types import (
-    StructType,
-    StructField,
-    StringType,
-    IntegerType,
-    LongType,
-    TimestampType
+from pyspark.sql import SparkSession
+
+from read_bronze import read_new_bronze
+from deduplicate_news import deduplicate_news
+
+
+# --------------------------------------------------
+# 1. CREATE SPARK SESSION
+# --------------------------------------------------
+
+spark = (
+    SparkSession.builder
+    .appName("IncrementalSilverNewsPipeline")
+    .master("local[*]")
+    .config("spark.sql.session.timeZone", "UTC")
+    .getOrCreate()
 )
 
-
-# --------------------------------------------------
-# 1. PROJECT PATHS
-# --------------------------------------------------
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
-BRONZE_PATH = (
-    PROJECT_ROOT
-    / "silver_news"
-    / "data"
-    / "actual_bronze"
-    / "news"
-)
-
-CHECKPOINT_DIR = (
-    PROJECT_ROOT
-    / "silver_news"
-    / "data"
-    / "checkpoints"
-)
-
-PROCESSED_FILES_PATH = CHECKPOINT_DIR / "processed_files.json"
+spark.sparkContext.setLogLevel("ERROR")
 
 
-# --------------------------------------------------
-# 2. SCHEMAS
-# --------------------------------------------------
+try:
 
-bronze_schema = StructType([
-    StructField("kafka_key", StringType(), True),
-    StructField("raw_json", StringType(), True),
-    StructField("topic", StringType(), True),
-    StructField("partition", IntegerType(), True),
-    StructField("offset", LongType(), True),
-    StructField("kafka_ts", TimestampType(), True),
-    StructField("bronze_file", StringType(), True)
-])
+    print("\n========================================")
+    print("       SILVER NEWS PIPELINE")
+    print("========================================")
 
-article_schema = StructType([
-    StructField("article_id", StringType(), True),
-    StructField("published_at", StringType(), True),
-    StructField("source", StringType(), True),
-    StructField("headline", StringType(), True),
-    StructField("full_text", StringType(), True),
-    StructField("url", StringType(), True),
-    StructField("ingested_at", StringType(), True)
-])
+    # --------------------------------------------------
+    # 2. READ NEW BRONZE FILES
+    # --------------------------------------------------
 
+    news_df, new_files = read_new_bronze(spark)
 
-# --------------------------------------------------
-# 3. LOAD FILE CHECKPOINT
-# --------------------------------------------------
+    if news_df is None:
 
-def load_processed_files():
+        print("\nNo records available for processing.")
 
-    if not PROCESSED_FILES_PATH.exists():
-        return set()
+    else:
 
-    import json
+        # --------------------------------------------------
+        # 3. ARTICLE-LEVEL DEDUPLICATION
+        # --------------------------------------------------
 
-    with open(
-        PROCESSED_FILES_PATH,
-        "r",
-        encoding="utf-8"
-    ) as file:
+        unique_news_df, missing_id_df = deduplicate_news(news_df)
 
-        data = json.load(file)
+        # --------------------------------------------------
+        # 4. DISPLAY RESULTS
+        # --------------------------------------------------
 
-    return set(data.get("processed_files", []))
+        print("\n========== NEW UNIQUE ARTICLES ==========")
 
+        unique_news_df.show(truncate=False)
 
-# --------------------------------------------------
-# 4. DISCOVER NEW BRONZE FILES
-# --------------------------------------------------
+        print("\n========== RECORDS WITH MISSING ARTICLE ID ==========")
 
-def discover_new_files():
+        missing_id_df.show(truncate=False)
 
-    if not BRONZE_PATH.exists():
-        raise FileNotFoundError(
-            f"Bronze folder not found: {BRONZE_PATH}"
-        )
+        print("\n========== STAGE 2 SUMMARY ==========")
 
-    all_files = sorted(BRONZE_PATH.glob("*.parquet"))
+        print("New Bronze files discovered:", len(new_files))
+        print("New unique articles:", unique_news_df.count())
+        print("Records requiring validation/DLQ:", missing_id_df.count())
 
-    processed_files = load_processed_files()
+        print("\nBRONZE READING AND ARTICLE DEDUPLICATION COMPLETED!")
 
-    new_files = [
-        file for file in all_files
-        if file.name not in processed_files
-    ]
+        # Checkpoint updates will be added only after
+        # the complete pipeline successfully writes its outputs.
 
-    print("\n========== INCREMENTAL FILE CHECK ==========")
-    print("Total Bronze files:", len(all_files))
-    print("Previously processed files:", len(processed_files))
-    print("New files to process:", len(new_files))
+finally:
 
-    for file in new_files:
-        print("NEW:", file.name)
-
-    for file in all_files:
-        if file.name in processed_files:
-            print("SKIPPED:", file.name)
-
-    return new_files
-
-
-# --------------------------------------------------
-# 5. READ AND PARSE NEW BRONZE FILES
-# --------------------------------------------------
-
-def read_new_bronze(spark):
-
-    new_files = discover_new_files()
-
-    if not new_files:
-        print("\nNo new Bronze files found.")
-        return None, []
-
-    records = []
-
-    for parquet_file in new_files:
-
-        print(f"\nReading: {parquet_file.name}")
-
-        arrow_table = pq.read_table(parquet_file)
-        file_records = arrow_table.to_pylist()
-
-        for record in file_records:
-
-            record["bronze_file"] = parquet_file.name
-
-            timestamp = record.get("kafka_ts")
-
-            if timestamp is not None and timestamp.tzinfo is not None:
-                record["kafka_ts"] = (
-                    timestamp.astimezone(timezone.utc)
-                    .replace(tzinfo=None)
-                )
-
-        print("Records in file:", len(file_records))
-
-        records.extend(file_records)
-
-    if not records:
-        print("\nNew files contain no records.")
-        return None, new_files
-
-    bronze_df = spark.createDataFrame(
-        records,
-        schema=bronze_schema
-    )
-
-    parsed_df = bronze_df.withColumn(
-        "article",
-        from_json(col("raw_json"), article_schema)
-    )
-
-    news_df = parsed_df.select(
-        col("bronze_file"),
-        col("kafka_key"),
-        col("topic"),
-        col("partition"),
-        col("offset"),
-        col("kafka_ts"),
-        col("article.article_id").alias("article_id"),
-        col("article.published_at").alias("published_at"),
-        col("article.source").alias("source"),
-        col("article.headline").alias("headline"),
-        col("article.full_text").alias("full_text"),
-        col("article.url").alias("url"),
-        col("article.ingested_at").alias("ingested_at")
-    )
-
-    print("\nTotal new Bronze records:", news_df.count())
-
-    return news_df, new_files
+    spark.stop()
+    print("\nSPARK SESSION STOPPED")
