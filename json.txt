@@ -1,129 +1,166 @@
 
+import json
+import re
+from pathlib import Path
+
 from pyspark.sql.functions import (
     col,
-    regexp_replace,
-    trim,
-    coalesce,
     lit,
-    when
+    when,
+    array,
+    filter as array_filter,
+    explode,
+    size
 )
 
 
-def clean_news(news_df):
+# --------------------------------------------------
+# 1. PROJECT PATHS
+# --------------------------------------------------
 
-    print("\n========== STARTING HTML CLEANING ==========")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-    # 1. Replace HTML block tags with spaces before removing tags.
-    # This prevents words from adjacent HTML elements joining together.
-    cleaned_df = news_df.withColumn(
-        "cleaned_full_text",
-        regexp_replace(
-            coalesce(col("full_text"), lit("")),
-            r"(?i)<\s*(br|/p|p|/div|div|/li|li|/font|font)\b[^>]*>",
-            " "
+ALIAS_PATH = (
+    PROJECT_ROOT
+    / "silver_news"
+    / "config"
+    / "company_aliases.json"
+)
+
+
+# --------------------------------------------------
+# 2. LOAD COMPANY ALIASES
+# --------------------------------------------------
+
+def load_company_aliases():
+
+    if not ALIAS_PATH.exists():
+        raise FileNotFoundError(
+            f"Alias file not found: {ALIAS_PATH}"
         )
+
+    with open(
+        ALIAS_PATH,
+        "r",
+        encoding="utf-8"
+    ) as file:
+
+        company_aliases = json.load(file)
+
+    print(
+        "Number of companies loaded:",
+        len(company_aliases)
     )
 
-    # 2. Remove remaining HTML tags.
-    cleaned_df = cleaned_df.withColumn(
-        "cleaned_full_text",
-        regexp_replace(
-            col("cleaned_full_text"),
-            r"<[^>]*>",
-            " "
-        )
-    )
+    return company_aliases
 
-    # 3. Decode common HTML entities.
-    # Decode ampersand last to avoid accidental double decoding.
-    cleaned_df = cleaned_df.withColumn(
-        "cleaned_full_text",
-        regexp_replace(
-            col("cleaned_full_text"),
-            r"(?i)&nbsp;|&#160;|&#xA0;",
-            " "
-        )
-    )
 
-    cleaned_df = cleaned_df.withColumn(
-        "cleaned_full_text",
-        regexp_replace(
-            col("cleaned_full_text"),
-            r"(?i)&quot;|&#34;|&ldquo;|&rdquo;",
-            '"'
-        )
-    )
+# --------------------------------------------------
+# 3. EXTRACT TICKERS
+# --------------------------------------------------
 
-    cleaned_df = cleaned_df.withColumn(
-        "cleaned_full_text",
-        regexp_replace(
-            col("cleaned_full_text"),
-            r"(?i)&apos;|&#39;|&#x27;|&lsquo;|&rsquo;",
-            "'"
-        )
-    )
+def extract_tickers(cleaned_df):
 
-    cleaned_df = cleaned_df.withColumn(
-        "cleaned_full_text",
-        regexp_replace(
-            col("cleaned_full_text"),
-            r"(?i)&lt;",
-            "<"
-        )
-    )
+    print("\n========== STARTING TICKER EXTRACTION ==========")
 
-    cleaned_df = cleaned_df.withColumn(
-        "cleaned_full_text",
-        regexp_replace(
-            col("cleaned_full_text"),
-            r"(?i)&gt;",
-            ">"
-        )
-    )
+    company_aliases = load_company_aliases()
 
-    cleaned_df = cleaned_df.withColumn(
-        "cleaned_full_text",
-        regexp_replace(
-            col("cleaned_full_text"),
-            r"(?i)&amp;",
-            "&"
-        )
-    )
+    analysis_text = col("text_for_analysis")
 
-    # 4. Normalize whitespace.
-    cleaned_df = cleaned_df.withColumn(
-        "cleaned_full_text",
-        trim(
-            regexp_replace(
-                col("cleaned_full_text"),
-                r"\s+",
-                " "
+    ticker_conditions = []
+
+    for ticker, aliases in company_aliases.items():
+
+        patterns = []
+
+        for alias in aliases:
+
+            escaped_alias = re.escape(alias)
+
+            pattern = (
+                r"(?i)(^|[^A-Za-z0-9])"
+                + escaped_alias
+                + r"([^A-Za-z0-9]|$)"
             )
+
+            patterns.append(pattern)
+
+        combined_pattern = "|".join(patterns)
+
+        condition = analysis_text.rlike(
+            combined_pattern
+        )
+
+        ticker_conditions.append(
+            when(condition, lit(ticker))
+        )
+
+    # Create an array containing matched tickers.
+    df_with_tickers = cleaned_df.withColumn(
+        "matched_tickers",
+        array_filter(
+            array(*ticker_conditions),
+            lambda ticker: ticker.isNotNull()
         )
     )
 
-    # 5. Clean headline separately.
-    cleaned_df = cleaned_df.withColumn(
+    # --------------------------------------------------
+    # 4. EXTRACTION SUMMARY
+    # --------------------------------------------------
+
+    total_articles = df_with_tickers.count()
+
+    matched_articles = (
+        df_with_tickers
+        .filter(size(col("matched_tickers")) > 0)
+        .count()
+    )
+
+    unmatched_articles = (
+        total_articles - matched_articles
+    )
+
+    print("\n========== TICKER EXTRACTION RESULTS ==========")
+
+    print("Total articles:", total_articles)
+    print("Articles with tickers:", matched_articles)
+    print("Articles without tickers:", unmatched_articles)
+
+    # --------------------------------------------------
+    # 5. CREATE NEWS BY TICKER
+    # --------------------------------------------------
+
+    news_by_ticker_df = (
+        df_with_tickers
+        .withColumn(
+            "ticker",
+            explode(col("matched_tickers"))
+        )
+    )
+
+    mapping_count = news_by_ticker_df.count()
+
+    print(
+        "Total article-ticker mappings:",
+        mapping_count
+    )
+
+    print("\nARTICLE-LEVEL TICKER RESULTS:")
+
+    df_with_tickers.select(
+        "article_id",
         "cleaned_headline",
-        trim(
-            regexp_replace(
-                coalesce(col("headline"), lit("")),
-                r"\s+",
-                " "
-            )
-        )
-    )
+        "matched_tickers"
+    ).show(truncate=False)
 
-    # 6. Select text for sentiment analysis.
-    # Prefer headline; use cleaned full text as fallback.
-    cleaned_df = cleaned_df.withColumn(
-        "text_for_analysis",
-        when(
-            col("cleaned_headline") != "",
-            col("cleaned_headline")
-        ).otherwise(col("cleaned_full_text"))
-    )
+    print("\nNEWS BY TICKER RESULTS:")
 
-    print("HTML cleaning completed.")
+    news_by_ticker_df.select(
+        "article_id",
+        "ticker",
+        "cleaned_headline"
+    ).show(truncate=False)
 
-    return cleaned_df
+    print("\nTICKER EXTRACTION COMPLETED!")
+
+    return df_with_tickers, news_by_ticker_df
