@@ -1,7 +1,4 @@
 
-import json
-from pathlib import Path
-
 from pyspark.sql import Window
 from pyspark.sql.functions import (
     col,
@@ -9,47 +6,11 @@ from pyspark.sql.functions import (
     row_number
 )
 
-
-# --------------------------------------------------
-# 1. PROJECT PATHS
-# --------------------------------------------------
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
-CHECKPOINT_DIR = (
-    PROJECT_ROOT
-    / "silver_news"
-    / "data"
-    / "checkpoints"
-)
-
-PROCESSED_ARTICLE_IDS_PATH = (
-    CHECKPOINT_DIR / "processed_article_ids.json"
-)
+from checkpoint_manager import load_processed_article_ids
 
 
 # --------------------------------------------------
-# 2. LOAD PREVIOUSLY PROCESSED ARTICLE IDs
-# --------------------------------------------------
-
-def load_processed_article_ids():
-
-    if not PROCESSED_ARTICLE_IDS_PATH.exists():
-        return set()
-
-    with open(
-        PROCESSED_ARTICLE_IDS_PATH,
-        "r",
-        encoding="utf-8"
-    ) as file:
-
-        data = json.load(file)
-
-    return set(data.get("processed_article_ids", []))
-
-
-# --------------------------------------------------
-# 3. ARTICLE-LEVEL DEDUPLICATION
+# 1. ARTICLE-LEVEL DEDUPLICATION
 # --------------------------------------------------
 
 def deduplicate_news(news_df):
@@ -58,28 +19,43 @@ def deduplicate_news(news_df):
 
     processed_ids = load_processed_article_ids()
 
-    print("Previously processed article IDs:", len(processed_ids))
+    print(
+        "Previously processed article IDs:",
+        len(processed_ids)
+    )
 
-    # Separate records with missing article IDs.
+    # --------------------------------------------------
+    # 2. SEPARATE RECORDS WITH MISSING ARTICLE IDs
+    # --------------------------------------------------
+
     missing_id_df = news_df.filter(
         col("article_id").isNull()
         | (trim(col("article_id")) == "")
     )
 
-    # Only records with a valid article ID can be deduplicated.
+    # --------------------------------------------------
+    # 3. KEEP RECORDS WITH ARTICLE IDs
+    # --------------------------------------------------
+
     identified_df = news_df.filter(
         col("article_id").isNotNull()
         & (trim(col("article_id")) != "")
     )
 
-    # Remove article IDs processed in earlier batches.
+    # --------------------------------------------------
+    # 4. REMOVE PREVIOUSLY PROCESSED ARTICLES
+    # --------------------------------------------------
+
     if processed_ids:
 
         identified_df = identified_df.filter(
             ~col("article_id").isin(list(processed_ids))
         )
 
-    # Remove duplicate IDs within the current batch.
+    # --------------------------------------------------
+    # 5. REMOVE DUPLICATES WITHIN CURRENT BATCH
+    # --------------------------------------------------
+
     window_spec = (
         Window
         .partitionBy("article_id")
@@ -101,14 +77,18 @@ def deduplicate_news(news_df):
         .drop("row_number")
     )
 
-    # Summary
+    # --------------------------------------------------
+    # 6. SUMMARY
+    # --------------------------------------------------
+
     incoming_count = news_df.count()
     missing_count = missing_id_df.count()
     unique_count = unique_new_df.count()
 
-    already_processed_count = len(processed_ids)
+    print("\n========== DEDUPLICATION SUMMARY ==========")
 
     print("Incoming records:", incoming_count)
+    print("Previously processed IDs:", len(processed_ids))
     print("Records with missing article IDs:", missing_count)
     print("New unique articles:", unique_count)
 
