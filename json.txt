@@ -1,376 +1,478 @@
-
-import hashlib
-import sys
-import os
-from pathlib import Path
-
-# --------------------------------------------------
-# 1. PYSPARK CONFIGURATION FOR WINDOWS
-# --------------------------------------------------
-
-os.environ["PYSPARK_PYTHON"] = sys.executable
-os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
-
-
-# --------------------------------------------------
-# 2. IMPORT REQUIRED MODULES
-# --------------------------------------------------
-
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, trim, lit
-
-from read_bronze import read_new_bronze
-from deduplicate_news import deduplicate_news
-from validate_news import validate_news
-from clean_news import clean_news
-from extract_tickers import extract_tickers
-from sentiment_analysis import analyse_sentiment
-
-from checkpoint_manager import (
-    load_processed_files,
-    save_processed_files,
-    load_processed_article_ids,
-    save_processed_article_ids
-)
-
-from safe_output_writer import (
-    write_batch_outputs,
-    create_commit_marker,
-    recover_checkpoints
-)
-
-
-# --------------------------------------------------
-# 3. GENERATE A STABLE BATCH ID
-# --------------------------------------------------
-
-def generate_batch_id(bronze_files):
-
-    filenames = sorted(
-        Path(file).name
-        for file in bronze_files
-    )
-
-    file_string = "|".join(filenames)
-
-    batch_hash = hashlib.sha256(
-        file_string.encode("utf-8")
-    ).hexdigest()[:16]
-
-    return f"batch_{batch_hash}"
-
-
-# --------------------------------------------------
-# 4. GET ARTICLE IDS FROM A DATAFRAME
-# --------------------------------------------------
-
-def get_article_ids(news_df):
-
-    if news_df is None:
-        return set()
-
-    rows = (
-        news_df
-        .select("article_id")
-        .where(
-            col("article_id").isNotNull()
-            & (trim(col("article_id")) != "")
-        )
-        .distinct()
-        .collect()
-    )
-
-    return {
-        row["article_id"]
-        for row in rows
-    }
-
-
-# --------------------------------------------------
-# 5. ADD EMPTY SENTIMENT COLUMNS
-# --------------------------------------------------
-
-def add_empty_sentiment_columns(dataframe):
-
-    # These names match sentiment_analysis.py.
-    sentiment_columns = {
-        "sentiment": "string",
-        "positive_score": "double",
-        "negative_score": "double",
-        "neutral_score": "double",
-        "sentiment_score": "double"
-    }
-
-    for column_name, data_type in sentiment_columns.items():
-
-        if column_name not in dataframe.columns:
-
-            dataframe = dataframe.withColumn(
-                column_name,
-                lit(None).cast(data_type)
-            )
-
-    return dataframe
-
-
-# --------------------------------------------------
-# 6. MAIN SILVER PIPELINE
-# --------------------------------------------------
-
-def run_silver_pipeline():
-
-    print("\n")
-    print("================================================")
-    print("          STARTING SILVER NEWS PIPELINE")
-    print("================================================")
-
-    spark = (
-        SparkSession.builder
-        .appName("SilverNewsPipeline")
-        .master("local[*]")
-        .getOrCreate()
-    )
-
-    try:
-
-        # ------------------------------------------
-        # STEP 1: RECOVER CHECKPOINTS
-        # ------------------------------------------
-
-        print("\n========== STEP 1: CHECKPOINT RECOVERY ==========")
-
-        recover_checkpoints()
-
-        # ------------------------------------------
-        # STEP 2: READ NEW BRONZE FILES
-        # ------------------------------------------
-
-        print("\n========== STEP 2: READ BRONZE ==========")
-
-        news_df, new_files = read_new_bronze(spark)
-
-        if not new_files:
-
-            print("\nNo new Bronze files found.")
-            print("Nothing to process.")
-
-            return
-
-        bronze_filenames = sorted(
-            Path(file).name
-            for file in new_files
-        )
-
-        print("New Bronze files:", len(bronze_filenames))
-
-        for filename in bronze_filenames:
-            print(" -", filename)
-
-        batch_id = generate_batch_id(bronze_filenames)
-
-        print("\nBatch ID:", batch_id)
-
-        # ------------------------------------------
-        # STEP 3: HANDLE EMPTY BRONZE FILES
-        # ------------------------------------------
-
-        if news_df is None:
-
-            print("\nNo records found in the new Bronze files.")
-
-            create_commit_marker(
-                batch_id=batch_id,
-                bronze_files=bronze_filenames,
-                processed_article_ids=[]
-            )
-
-            recover_checkpoints()
-
-            print("Empty batch committed successfully.")
-
-            return
-
-        # ------------------------------------------
-        # STEP 4: ARTICLE-LEVEL DEDUPLICATION
-        # ------------------------------------------
-
-        print("\n========== STEP 3: DEDUPLICATION ==========")
-
-        unique_new_df, missing_id_df = deduplicate_news(
-            news_df
-        )
-
-        # Keep missing-ID records so validation can
-        # route them to the DLQ.
-        candidates_df = unique_new_df.unionByName(
-            missing_id_df,
-            allowMissingColumns=True
-        )
-
-        candidate_count = candidates_df.count()
-
-        print("Records proceeding to validation:", candidate_count)
-
-        # Collect IDs before validation.
-        # They will only be checkpointed after a successful commit.
-        batch_article_ids = get_article_ids(candidates_df)
-
-        # ------------------------------------------
-        # STEP 5: VALIDATION
-        # ------------------------------------------
-
-        print("\n========== STEP 4: VALIDATION ==========")
-
-        valid_df, invalid_df = validate_news(
-            candidates_df
-        )
-
-        valid_count = valid_df.count()
-        invalid_count = invalid_df.count()
-
-        print("Valid articles:", valid_count)
-        print("Invalid articles:", invalid_count)
-
-        # ------------------------------------------
-        # STEP 6: HTML CLEANING
-        # ------------------------------------------
-
-        print("\n========== STEP 5: HTML CLEANING ==========")
-
-        cleaned_df = clean_news(valid_df)
-
-        # ------------------------------------------
-        # STEP 7: TICKER EXTRACTION
-        # ------------------------------------------
-
-        print("\n========== STEP 6: TICKER EXTRACTION ==========")
-
-        (
-            news_with_tickers_df,
-            news_by_ticker_df
-        ) = extract_tickers(cleaned_df)
-
-        # ------------------------------------------
-        # STEP 8: FINBERT SENTIMENT ANALYSIS
-        # ------------------------------------------
-
-        print("\n========== STEP 7: FINBERT SENTIMENT ==========")
-
-        if valid_count > 0:
-
-            (
-                news_with_sentiment_df,
-                news_by_ticker_with_sentiment_df
-            ) = analyse_sentiment(
-                news_with_tickers_df,
-                news_by_ticker_df
-            )
-
-        else:
-
-            print("No valid articles. Skipping FinBERT.")
-
-            news_with_sentiment_df = (
-                add_empty_sentiment_columns(
-                    news_with_tickers_df
-                )
-            )
-
-            news_by_ticker_with_sentiment_df = (
-                add_empty_sentiment_columns(
-                    news_by_ticker_df
-                )
-            )
-
-        # ------------------------------------------
-        # STEP 9: WRITE SILVER AND DLQ OUTPUTS
-        # ------------------------------------------
-
-        print("\n========== STEP 8: WRITE OUTPUTS ==========")
-
-        committed = write_batch_outputs(
-            batch_id=batch_id,
-            news_with_sentiment_df=news_with_sentiment_df,
-            news_by_ticker_with_sentiment_df=news_by_ticker_with_sentiment_df,
-            invalid_df=invalid_df,
-            bronze_files=bronze_filenames,
-            processed_article_ids=batch_article_ids
-        )
-
-        # ------------------------------------------
-        # STEP 10: UPDATE CHECKPOINTS
-        # ------------------------------------------
-
-        print("\n========== STEP 9: UPDATE CHECKPOINTS ==========")
-
-        if committed:
-
-            processed_files = load_processed_files()
-
-            processed_files.update(
-                bronze_filenames
-            )
-
-            save_processed_files(
-                processed_files
-            )
-
-            processed_ids = load_processed_article_ids()
-
-            processed_ids.update(
-                batch_article_ids
-            )
-
-            save_processed_article_ids(
-                processed_ids
-            )
-
-            print("Checkpoint files updated successfully.")
-
-        else:
-
-            print("Batch already committed.")
-
-            recover_checkpoints()
-
-        # ------------------------------------------
-        # STEP 11: FINAL SUMMARY
-        # ------------------------------------------
-
-        print("\n")
-        print("================================================")
-        print("          SILVER NEWS PIPELINE COMPLETED")
-        print("================================================")
-
-        print("Batch ID:", batch_id)
-        print("Bronze files processed:", len(bronze_filenames))
-        print("Articles considered:", candidate_count)
-        print("Valid articles:", valid_count)
-        print("Invalid articles:", invalid_count)
-        print("Article IDs checkpointed:", len(batch_article_ids))
-
-    except Exception as error:
-
-        print("\n")
-        print("================================================")
-        print("          SILVER NEWS PIPELINE FAILED")
-        print("================================================")
-
-        print("Error:", str(error))
-
-        raise
-
-    finally:
-
-        spark.stop()
-
-        print("\nSpark session stopped.")
-
-
-# --------------------------------------------------
-# 12. EXECUTE PIPELINE
-# --------------------------------------------------
-
-if __name__ == "__main__":
-
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\src\run_silver_pipeline.py 
+
+
+================================================
+          STARTING SILVER NEWS PIPELINE
+================================================
+WARNING: Using incubator modules: jdk.incubator.vector
+26/11/12 00:26:30 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
+Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\testing\utils.py:127: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
+  require_minimum_pandas_version()
+26/11/12 00:26:33 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+
+========== STEP 1: CHECKPOINT RECOVERY ==========
+
+========== CHECKPOINT RECOVERY ==========
+No committed batches found.
+
+========== STEP 2: READ BRONZE ==========
+
+========== INCREMENTAL FILE CHECK ==========
+Total Bronze files: 2
+Previously processed files: 0
+New files to process: 2
+NEW: news_20261111T121717065202Z_3db0d16c.parquet
+NEW: news_20261111T140258714551Z_b912528c.parquet
+
+Reading: news_20261111T121717065202Z_3db0d16c.parquet
+Records in file: 1
+
+Reading: news_20261111T140258714551Z_b912528c.parquet
+Records in file: 13
+                                                                                
+Total new Bronze records: 14
+New Bronze files: 2
+ - news_20261111T121717065202Z_3db0d16c.parquet
+ - news_20261111T140258714551Z_b912528c.parquet
+
+Batch ID: batch_c2b88c1be7eec104
+
+========== STEP 3: DEDUPLICATION ==========
+
+========== ARTICLE-LEVEL DEDUPLICATION ==========
+Previously processed article IDs: 0
+                                                                                
+========== DEDUPLICATION SUMMARY ==========
+Incoming records: 14
+Previously processed IDs: 0
+Records with missing article IDs: 0
+New unique articles: 14
+
+Article-level deduplication completed!
+Records proceeding to validation: 14                                            
+                                                                                
+========== STEP 4: VALIDATION ==========
+
+========== STARTING NEWS VALIDATION ==========
+                                                                                
+========== VALIDATION SUMMARY ==========
+Total candidate records: 14
+Valid records: 14
+Invalid records: 0
+
+Validation completed!
+Valid articles: 14                                                              
+Invalid articles: 0
+
+========== STEP 5: HTML CLEANING ==========
+
+========== STARTING HTML CLEANING ==========
+HTML cleaning completed.
+
+========== STEP 6: TICKER EXTRACTION ==========
+
+========== STARTING TICKER EXTRACTION ==========
+Number of companies loaded: 13
+                                                                                
+========== TICKER EXTRACTION RESULTS ==========
+Total articles: 14
+Articles with tickers: 14
+Articles without tickers: 0
+Total article-ticker mappings: 16                                               
+
+ARTICLE-LEVEL TICKER RESULTS:
++----------------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------------------+-----------------------+
+|article_id                                                      |cleaned_headline                                                                                                               |matched_tickers        |
++----------------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------------------+-----------------------+
+|2c722ecefd8cb6bb9d3b7d9429d7f5b28192d157673fd1cd0fdbd22e4de4bf59|Dividend Stocks in Focus: Coal India, Vedanta, IOCL and BPCL - Univest                                                         |[COALINDIA]            |
+|423f517ade55fbaf98d5b1d0388d5e63b51c82e367f084c77a0e5553c2b2e31b|Weekly Recap: ITC Limited Q1 revenue, profit decline and 52-week low - TradingView                                             |[ITC]                  |
+|4ff20cbbed92d4ad4c6719ffe03f6c6e81e01e8c2ebaa28143af8afdb36dd9b1|Infosys stock heads toward November 11 dividend payment - ad-hoc-news.de                                                       |[INFY]                 |
+|5c08a8c5d877893dd3c61616a61dec7def617aa2d7416e487fb9fd44c4682554|Sun Pharma completes $11.75bn financing syndication for Organon acquisition - Generics and Biosimilars Initiative              |[SUNPHARMA]            |
+|6a6f6284e981898c7d2108c743ca4bb36aa427ea6d280e257be4ede7fa32a644|ICICI Bank Q2 results: Net profit rises 20% to Rs 14,843 crore, beats estimates; NII up 18% - Moneycontrol.com                 |[ICICIBANK]            |
+|70de7eb0da939f8c077370d9b22ac289af38d6674f344fe561d89afb72f7174b|Tata Steel shares rise 2%. Why brokerages remain bullish; see up to 30% upside potential - The Economic Times                  |[TATASTEEL]            |
+|7a647c9b226e0c002442ef7244802e6b7cac83897ea07d90891f975ed10a3742|Tata Consultancy Services Stock And Other Indian Dividend Anchors Built For Steady Income - Yahoo Finance                      |[TCS]                  |
+|ace671ba086e7aed98d7a37c90993e58e2fe5cefaff41ab0dc7254b3553b2d29|Bajaj Finance Approves Opening of QIP at ₹992.25 Floor Price - TipRanks                                                        |[BAJFINANCE]           |
+|b1c177b40466d92da778a1eb89f952a2e51bcac7d43689f2acc5c50bcc9422fa|Bajaj Finance opens QIP at Rs 992.25 floor price, may offer up to 5% discount - The Economic Times                             |[BAJFINANCE]           |
+|bba566cd475cef8feaf73d348a87ba2a1ff0cdd09b24ad2d372bbb3135bb52a0|RIL, HDFC Bank, Axis To Max Healthcare: Jefferies Picks 12 Stocks For FPI Comeback - NDTV Profit                               |[RELIANCE, HDFCBANK]   |
+|c2ebd89a49cc9faf146713ae4e7568a0aea9c99175cc6d190f9445e526f2b07e|Adani Enterprises plans INR 35,000-40,000 crore annual capex as airports, data centres and PVC drive expansion - Prop News Time|[ADANIENT]             |
+|d00a68553fe57e84eb4ea5fd73cba59555df770dcc38c31b5811758646987125|Khaitan & Co Advises Reliance Industries On Strategic Partnership With Meta For AI Data Centre In India - LawBeat              |[RELIANCE]             |
+|e1e59bed7ce58ba019828ca9a66295069a9c101878dc683ebae3fe4037055eac|Earnings call transcript: State Bank of India Q2 2027 profit rises, stock falls 5% - Investing.com India                       |[SBIN]                 |
+|e24c42d5692208648e23dd631858e3ab9abef29db7983a64c52f789c9c98070c|ICICI Securities gives Bharti Airtel buy rating with ₹2,430 target - NewsBytes                                                 |[ICICIBANK, BHARTIARTL]|
++----------------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------------------+-----------------------+
+
+
+NEWS BY TICKER RESULTS:
++----------------------------------------------------------------+----------+-------------------------------------------------------------------------------------------------------------------------------+
+|article_id                                                      |ticker    |cleaned_headline                                                                                                               |
++----------------------------------------------------------------+----------+-------------------------------------------------------------------------------------------------------------------------------+
+|2c722ecefd8cb6bb9d3b7d9429d7f5b28192d157673fd1cd0fdbd22e4de4bf59|COALINDIA |Dividend Stocks in Focus: Coal India, Vedanta, IOCL and BPCL - Univest                                                         |
+|423f517ade55fbaf98d5b1d0388d5e63b51c82e367f084c77a0e5553c2b2e31b|ITC       |Weekly Recap: ITC Limited Q1 revenue, profit decline and 52-week low - TradingView                                             |
+|4ff20cbbed92d4ad4c6719ffe03f6c6e81e01e8c2ebaa28143af8afdb36dd9b1|INFY      |Infosys stock heads toward November 11 dividend payment - ad-hoc-news.de                                                       |
+|5c08a8c5d877893dd3c61616a61dec7def617aa2d7416e487fb9fd44c4682554|SUNPHARMA |Sun Pharma completes $11.75bn financing syndication for Organon acquisition - Generics and Biosimilars Initiative              |
+|6a6f6284e981898c7d2108c743ca4bb36aa427ea6d280e257be4ede7fa32a644|ICICIBANK |ICICI Bank Q2 results: Net profit rises 20% to Rs 14,843 crore, beats estimates; NII up 18% - Moneycontrol.com                 |
+|70de7eb0da939f8c077370d9b22ac289af38d6674f344fe561d89afb72f7174b|TATASTEEL |Tata Steel shares rise 2%. Why brokerages remain bullish; see up to 30% upside potential - The Economic Times                  |
+|7a647c9b226e0c002442ef7244802e6b7cac83897ea07d90891f975ed10a3742|TCS       |Tata Consultancy Services Stock And Other Indian Dividend Anchors Built For Steady Income - Yahoo Finance                      |
+|ace671ba086e7aed98d7a37c90993e58e2fe5cefaff41ab0dc7254b3553b2d29|BAJFINANCE|Bajaj Finance Approves Opening of QIP at ₹992.25 Floor Price - TipRanks                                                        |
+|b1c177b40466d92da778a1eb89f952a2e51bcac7d43689f2acc5c50bcc9422fa|BAJFINANCE|Bajaj Finance opens QIP at Rs 992.25 floor price, may offer up to 5% discount - The Economic Times                             |
+|bba566cd475cef8feaf73d348a87ba2a1ff0cdd09b24ad2d372bbb3135bb52a0|RELIANCE  |RIL, HDFC Bank, Axis To Max Healthcare: Jefferies Picks 12 Stocks For FPI Comeback - NDTV Profit                               |
+|bba566cd475cef8feaf73d348a87ba2a1ff0cdd09b24ad2d372bbb3135bb52a0|HDFCBANK  |RIL, HDFC Bank, Axis To Max Healthcare: Jefferies Picks 12 Stocks For FPI Comeback - NDTV Profit                               |
+|c2ebd89a49cc9faf146713ae4e7568a0aea9c99175cc6d190f9445e526f2b07e|ADANIENT  |Adani Enterprises plans INR 35,000-40,000 crore annual capex as airports, data centres and PVC drive expansion - Prop News Time|
+|d00a68553fe57e84eb4ea5fd73cba59555df770dcc38c31b5811758646987125|RELIANCE  |Khaitan & Co Advises Reliance Industries On Strategic Partnership With Meta For AI Data Centre In India - LawBeat              |
+|e1e59bed7ce58ba019828ca9a66295069a9c101878dc683ebae3fe4037055eac|SBIN      |Earnings call transcript: State Bank of India Q2 2027 profit rises, stock falls 5% - Investing.com India                       |
+|e24c42d5692208648e23dd631858e3ab9abef29db7983a64c52f789c9c98070c|ICICIBANK |ICICI Securities gives Bharti Airtel buy rating with ₹2,430 target - NewsBytes                                                 |
+|e24c42d5692208648e23dd631858e3ab9abef29db7983a64c52f789c9c98070c|BHARTIARTL|ICICI Securities gives Bharti Airtel buy rating with ₹2,430 target - NewsBytes                                                 |
++----------------------------------------------------------------+----------+-------------------------------------------------------------------------------------------------------------------------------+
+
+
+TICKER EXTRACTION COMPLETED!
+
+========== STEP 7: FINBERT SENTIMENT ==========
+
+========== STARTING FINBERT SENTIMENT ANALYSIS ==========
+Total unique articles: 14                                                       
+
+========== LOADING FINBERT ==========
+Using device: cpu
+Tokenizer loaded successfully.
+Loading weights: 100%|██████████████████████████████████████████████████████████| 201/201 [00:00<00:00, 569.50it/s]
+FinBERT model loaded successfully!
+
+Model sentiment labels:
+{'positive': 0, 'negative': 1, 'neutral': 2}
+
+Starting FinBERT inference...
+Processed 8/14 articles
+Processed 14/14 articles
+                                                                                
+========== ARTICLE-LEVEL SENTIMENT ==========
+26/11/12 00:33:39 WARN SparkStringUtils: Truncated the string representation of a plan since it was too large. This behavior can be adjusted by setting 'spark.sql.debug.maxToStringFields'.
++----------------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------------------+-----------------------+---------+--------------------+--------------------+--------------------+--------------------+
+|article_id                                                      |cleaned_headline                                                                                                               |matched_tickers        |sentiment|positive_score      |negative_score      |neutral_score       |sentiment_score     |
++----------------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------------------+-----------------------+---------+--------------------+--------------------+--------------------+--------------------+
+|2c722ecefd8cb6bb9d3b7d9429d7f5b28192d157673fd1cd0fdbd22e4de4bf59|Dividend Stocks in Focus: Coal India, Vedanta, IOCL and BPCL - Univest                                                         |[COALINDIA]            |neutral  |0.02875244803726673 |0.02103118784725666 |0.9502163529396057  |0.007721260190010071|
+|423f517ade55fbaf98d5b1d0388d5e63b51c82e367f084c77a0e5553c2b2e31b|Weekly Recap: ITC Limited Q1 revenue, profit decline and 52-week low - TradingView                                             |[ITC]                  |negative |0.00824438501149416 |0.9741014242172241  |0.0176541805267334  |-0.96585703920573   |
+|4ff20cbbed92d4ad4c6719ffe03f6c6e81e01e8c2ebaa28143af8afdb36dd9b1|Infosys stock heads toward November 11 dividend payment - ad-hoc-news.de                                                       |[INFY]                 |neutral  |0.07473237812519073 |0.01443940494209528 |0.9108282327651978  |0.060292973183095455|
+|5c08a8c5d877893dd3c61616a61dec7def617aa2d7416e487fb9fd44c4682554|Sun Pharma completes $11.75bn financing syndication for Organon acquisition - Generics and Biosimilars Initiative              |[SUNPHARMA]            |positive |0.6523731350898743  |0.00888133142143488 |0.33874544501304626 |0.6434918036684394  |
+|6a6f6284e981898c7d2108c743ca4bb36aa427ea6d280e257be4ede7fa32a644|ICICI Bank Q2 results: Net profit rises 20% to Rs 14,843 crore, beats estimates; NII up 18% - Moneycontrol.com                 |[ICICIBANK]            |positive |0.9434094429016113  |0.026369383558630943|0.030221158638596535|0.9170400593429804  |
+|70de7eb0da939f8c077370d9b22ac289af38d6674f344fe561d89afb72f7174b|Tata Steel shares rise 2%. Why brokerages remain bullish; see up to 30% upside potential - The Economic Times                  |[TATASTEEL]            |positive |0.7201249003410339  |0.04390176758170128 |0.23597335815429688 |0.6762231327593327  |
+|7a647c9b226e0c002442ef7244802e6b7cac83897ea07d90891f975ed10a3742|Tata Consultancy Services Stock And Other Indian Dividend Anchors Built For Steady Income - Yahoo Finance                      |[TCS]                  |neutral  |0.12213986366987228 |0.016893692314624786|0.8609664440155029  |0.1052461713552475  |
+|ace671ba086e7aed98d7a37c90993e58e2fe5cefaff41ab0dc7254b3553b2d29|Bajaj Finance Approves Opening of QIP at ₹992.25 Floor Price - TipRanks                                                        |[BAJFINANCE]           |neutral  |0.12019325792789459 |0.009935553185641766|0.869871199131012   |0.11025770474225283 |
+|b1c177b40466d92da778a1eb89f952a2e51bcac7d43689f2acc5c50bcc9422fa|Bajaj Finance opens QIP at Rs 992.25 floor price, may offer up to 5% discount - The Economic Times                             |[BAJFINANCE]           |neutral  |0.3265865743160248  |0.009915398433804512|0.6634979844093323  |0.31667117588222027 |
+|bba566cd475cef8feaf73d348a87ba2a1ff0cdd09b24ad2d372bbb3135bb52a0|RIL, HDFC Bank, Axis To Max Healthcare: Jefferies Picks 12 Stocks For FPI Comeback - NDTV Profit                               |[RELIANCE, HDFCBANK]   |neutral  |0.127339169383049   |0.01103041972965002 |0.8616304397583008  |0.11630874965339899 |
+|c2ebd89a49cc9faf146713ae4e7568a0aea9c99175cc6d190f9445e526f2b07e|Adani Enterprises plans INR 35,000-40,000 crore annual capex as airports, data centres and PVC drive expansion - Prop News Time|[ADANIENT]             |positive |0.6345735788345337  |0.008877865970134735|0.35654863715171814 |0.625695712864399   |
+|d00a68553fe57e84eb4ea5fd73cba59555df770dcc38c31b5811758646987125|Khaitan & Co Advises Reliance Industries On Strategic Partnership With Meta For AI Data Centre In India - LawBeat              |[RELIANCE]             |neutral  |0.47646960616111755 |0.008165627717971802|0.5153647661209106  |0.46830397844314575 |
+|e1e59bed7ce58ba019828ca9a66295069a9c101878dc683ebae3fe4037055eac|Earnings call transcript: State Bank of India Q2 2027 profit rises, stock falls 5% - Investing.com India                       |[SBIN]                 |negative |0.053210221230983734|0.6322794556617737  |0.31451037526130676 |-0.57906923443079   |
+|e24c42d5692208648e23dd631858e3ab9abef29db7983a64c52f789c9c98070c|ICICI Securities gives Bharti Airtel buy rating with ₹2,430 target - NewsBytes                                                 |[ICICIBANK, BHARTIARTL]|neutral  |0.11493004858493805 |0.01053816732019186 |0.8745318055152893  |0.10439188126474619 |
++----------------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------------------+-----------------------+---------+--------------------+--------------------+--------------------+--------------------+
+
+
+========== TICKER-LEVEL SENTIMENT ==========
++----------------------------------------------------------------+----------+---------+--------------------+
+|article_id                                                      |ticker    |sentiment|sentiment_score     |
++----------------------------------------------------------------+----------+---------+--------------------+
+|2c722ecefd8cb6bb9d3b7d9429d7f5b28192d157673fd1cd0fdbd22e4de4bf59|COALINDIA |neutral  |0.007721260190010071|
+|423f517ade55fbaf98d5b1d0388d5e63b51c82e367f084c77a0e5553c2b2e31b|ITC       |negative |-0.96585703920573   |
+|4ff20cbbed92d4ad4c6719ffe03f6c6e81e01e8c2ebaa28143af8afdb36dd9b1|INFY      |neutral  |0.060292973183095455|
+|5c08a8c5d877893dd3c61616a61dec7def617aa2d7416e487fb9fd44c4682554|SUNPHARMA |positive |0.6434918036684394  |
+|6a6f6284e981898c7d2108c743ca4bb36aa427ea6d280e257be4ede7fa32a644|ICICIBANK |positive |0.9170400593429804  |
+|70de7eb0da939f8c077370d9b22ac289af38d6674f344fe561d89afb72f7174b|TATASTEEL |positive |0.6762231327593327  |
+|7a647c9b226e0c002442ef7244802e6b7cac83897ea07d90891f975ed10a3742|TCS       |neutral  |0.1052461713552475  |
+|ace671ba086e7aed98d7a37c90993e58e2fe5cefaff41ab0dc7254b3553b2d29|BAJFINANCE|neutral  |0.11025770474225283 |
+|b1c177b40466d92da778a1eb89f952a2e51bcac7d43689f2acc5c50bcc9422fa|BAJFINANCE|neutral  |0.31667117588222027 |
+|bba566cd475cef8feaf73d348a87ba2a1ff0cdd09b24ad2d372bbb3135bb52a0|RELIANCE  |neutral  |0.11630874965339899 |
+|bba566cd475cef8feaf73d348a87ba2a1ff0cdd09b24ad2d372bbb3135bb52a0|HDFCBANK  |neutral  |0.11630874965339899 |
+|c2ebd89a49cc9faf146713ae4e7568a0aea9c99175cc6d190f9445e526f2b07e|ADANIENT  |positive |0.625695712864399   |
+|d00a68553fe57e84eb4ea5fd73cba59555df770dcc38c31b5811758646987125|RELIANCE  |neutral  |0.46830397844314575 |
+|e1e59bed7ce58ba019828ca9a66295069a9c101878dc683ebae3fe4037055eac|SBIN      |negative |-0.57906923443079   |
+|e24c42d5692208648e23dd631858e3ab9abef29db7983a64c52f789c9c98070c|ICICIBANK |neutral  |0.10439188126474619 |
+|e24c42d5692208648e23dd631858e3ab9abef29db7983a64c52f789c9c98070c|BHARTIARTL|neutral  |0.10439188126474619 |
++----------------------------------------------------------------+----------+---------+--------------------+
+
+
+========================================
+FINBERT SENTIMENT ANALYSIS COMPLETED
+========================================
+Articles processed: 14
+Article-ticker records: 16
+
+Sentiment analysis completed successfully.
+
+========== STEP 8: WRITE OUTPUTS ==========
+
+========== SAFE BATCH WRITING ==========
+
+Writing article-level Silver data...
+
+
+================================================
+          SILVER NEWS PIPELINE FAILED
+================================================
+Error: An error occurred while calling o493.parquet.
+: java.lang.RuntimeException: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
+        at org.apache.hadoop.util.Shell.getWinUtilsPath(Shell.java:790)
+        at org.apache.hadoop.util.Shell.getSetPermissionCommand(Shell.java:299)
+        at org.apache.hadoop.util.Shell.getSetPermissionCommand(Shell.java:315)
+        at org.apache.hadoop.fs.RawLocalFileSystem.setPermission(RawLocalFileSystem.java:1179)
+        at org.apache.hadoop.fs.RawLocalFileSystem.mkOneDirWithMode(RawLocalFileSystem.java:861)
+        at org.apache.hadoop.fs.RawLocalFileSystem.mkdirsWithOptionalPermission(RawLocalFileSystem.java:901)
+        at org.apache.hadoop.fs.RawLocalFileSystem.mkdirs(RawLocalFileSystem.java:873)
+        at org.apache.hadoop.fs.RawLocalFileSystem.mkdirsWithOptionalPermission(RawLocalFileSystem.java:900)
+        at org.apache.hadoop.fs.RawLocalFileSystem.mkdirs(RawLocalFileSystem.java:873)
+        at org.apache.hadoop.fs.RawLocalFileSystem.mkdirsWithOptionalPermission(RawLocalFileSystem.java:900)
+        at org.apache.hadoop.fs.RawLocalFileSystem.mkdirs(RawLocalFileSystem.java:873)
+        at org.apache.hadoop.fs.ChecksumFileSystem.mkdirs(ChecksumFileSystem.java:1047)
+        at org.apache.hadoop.mapreduce.lib.output.FileOutputCommitter.setupJob(FileOutputCommitter.java:361)
+        at org.apache.spark.internal.io.HadoopMapReduceCommitProtocol.setupJob(HadoopMapReduceCommitProtocol.scala:186)
+        at org.apache.spark.sql.execution.datasources.FileFormatWriter$.write(FileFormatWriter.scala:168)
+        at org.apache.spark.sql.execution.datasources.InsertIntoHadoopFsRelationCommand.run(InsertIntoHadoopFsRelationCommand.scala:200)
+        at org.apache.spark.sql.execution.command.DataWritingCommandExec.sideEffectResult$lzycompute(commands.scala:117)
+        at org.apache.spark.sql.execution.command.DataWritingCommandExec.sideEffectResult(commands.scala:115)
+        at org.apache.spark.sql.execution.command.DataWritingCommandExec.executeCollect(commands.scala:129)
+        at org.apache.spark.sql.execution.QueryExecution$.$anonfun$runCommand$2(QueryExecution.scala:997)
+        at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId0$8(SQLExecution.scala:228)
+        at org.apache.spark.sql.execution.SQLExecution$.withSessionTagsApplied(SQLExecution.scala:352)
+        at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId0$7(SQLExecution.scala:189)
+        at org.apache.spark.JobArtifactSet$.withActiveJobArtifactState(JobArtifactSet.scala:94)
+        at org.apache.spark.sql.artifact.ArtifactManager.$anonfun$withResources$1(ArtifactManager.scala:112)
+        at org.apache.spark.sql.artifact.ArtifactManager.withClassLoaderIfNeeded(ArtifactManager.scala:106)
+        at org.apache.spark.sql.artifact.ArtifactManager.withResources(ArtifactManager.scala:111)
+        at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId0$6(SQLExecution.scala:189)
+        at org.apache.spark.sql.execution.SQLExecution$.withSQLConfPropagated(SQLExecution.scala:375)
+        at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId0$1(SQLExecution.scala:188)
+        at org.apache.spark.sql.SparkSession.withActive(SparkSession.scala:810)
+        at org.apache.spark.sql.execution.SQLExecution$.withNewExecutionId0(SQLExecution.scala:130)
+        at org.apache.spark.sql.execution.SQLExecution$.withNewExecutionId(SQLExecution.scala:317)
+        at org.apache.spark.sql.execution.QueryExecution$.$anonfun$runCommand$1(QueryExecution.scala:995)
+        at org.apache.spark.sql.execution.QueryExecution$.withInternalError(QueryExecution.scala:927)
+        at org.apache.spark.sql.execution.QueryExecution$.runCommand(QueryExecution.scala:995)
+        at org.apache.spark.sql.execution.QueryExecution.org$apache$spark$sql$execution$QueryExecution$$eagerlyExecute$1(QueryExecution.scala:262)
+        at org.apache.spark.sql.execution.QueryExecution$$anonfun$eagerlyExecuteCommands$1.applyOrElse(QueryExecution.scala:277)
+        at org.apache.spark.sql.execution.QueryExecution$$anonfun$eagerlyExecuteCommands$1.applyOrElse(QueryExecution.scala:270)
+        at org.apache.spark.sql.catalyst.trees.TreeNode.$anonfun$transformDownWithPruning$1(TreeNode.scala:495)
+        at org.apache.spark.sql.catalyst.trees.CurrentOrigin$.withOrigin(origin.scala:107)
+        at org.apache.spark.sql.catalyst.trees.TreeNode.transformDownWithPruning(TreeNode.scala:495)
+        at org.apache.spark.sql.catalyst.plans.logical.LogicalPlan.org$apache$spark$sql$catalyst$plans$logical$AnalysisHelper$$super$transformDownWithPruning(LogicalPlan.scala:38)
+        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.transformDownWithPruning(AnalysisHelper.scala:360)
+        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.transformDownWithPruning$(AnalysisHelper.scala:356)
+        at org.apache.spark.sql.catalyst.plans.logical.LogicalPlan.transformDownWithPruning(LogicalPlan.scala:38)
+        at org.apache.spark.sql.catalyst.plans.logical.LogicalPlan.transformDownWithPruning(LogicalPlan.scala:38)
+        at org.apache.spark.sql.catalyst.trees.TreeNode.transformDown(TreeNode.scala:471)
+        at org.apache.spark.sql.execution.QueryExecution.eagerlyExecuteCommands(QueryExecution.scala:270)
+        at org.apache.spark.sql.execution.QueryExecution.$anonfun$lazyCommandExecuted$1(QueryExecution.scala:234)
+        at scala.util.Try$.apply(Try.scala:217)
+        at org.apache.spark.util.Utils$.doTryWithCallerStacktrace(Utils.scala:1407)
+        at org.apache.spark.util.Utils$.getTryWithCallerStacktrace(Utils.scala:1457)
+        at org.apache.spark.util.LazyTry.get(LazyTry.scala:61)
+        at org.apache.spark.sql.execution.QueryExecution.$anonfun$commandExecuted$1(QueryExecution.scala:240)
+        at org.apache.spark.sql.execution.QueryExecution.withAbortTransactionOnFailure(QueryExecution.scala:653)
+        at org.apache.spark.sql.execution.QueryExecution.commandExecuted(QueryExecution.scala:240)
+        at org.apache.spark.sql.execution.QueryExecution.assertCommandExecuted(QueryExecution.scala:325)
+        at org.apache.spark.sql.classic.DataFrameWriter.runCommand(DataFrameWriter.scala:636)
+        at org.apache.spark.sql.classic.DataFrameWriter.save(DataFrameWriter.scala:116)
+        at org.apache.spark.sql.DataFrameWriter.parquet(DataFrameWriter.scala:383)
+        at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+        at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+        at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+        at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+        at py4j.reflection.MethodInvoker.invoke(MethodInvoker.java:244)
+        at py4j.reflection.ReflectionEngine.invoke(ReflectionEngine.java:374)
+        at py4j.Gateway.invoke(Gateway.java:282)
+        at py4j.commands.AbstractCommand.invokeMethod(AbstractCommand.java:132)
+        at py4j.commands.CallCommand.execute(CallCommand.java:79)
+        at py4j.ClientServerConnection.waitForCommands(ClientServerConnection.java:184)
+        at py4j.ClientServerConnection.run(ClientServerConnection.java:108)
+        at java.base/java.lang.Thread.run(Thread.java:840)
+Caused by: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
+        at org.apache.hadoop.util.Shell.fileNotFoundException(Shell.java:602)
+        at org.apache.hadoop.util.Shell.getHadoopHomeDir(Shell.java:623)
+        at org.apache.hadoop.util.Shell.getQualifiedBin(Shell.java:646)
+        at org.apache.hadoop.util.Shell.<clinit>(Shell.java:743)
+        at org.apache.hadoop.util.StringUtils.<clinit>(StringUtils.java:80)
+        at org.apache.hadoop.conf.Configuration.getTimeDurationHelper(Configuration.java:1938)
+        at org.apache.hadoop.conf.Configuration.getTimeDuration(Configuration.java:1896)
+        at org.apache.hadoop.conf.Configuration.getTimeDuration(Configuration.java:1869)
+        at org.apache.hadoop.util.ShutdownHookManager.getShutdownTimeout(ShutdownHookManager.java:184)
+        at org.apache.hadoop.util.ShutdownHookManager$HookEntry.<init>(ShutdownHookManager.java:208)
+        at org.apache.hadoop.util.ShutdownHookManager.addShutdownHook(ShutdownHookManager.java:305)
+        at org.apache.spark.util.SparkShutdownHookManager.$anonfun$install$1(ShutdownHookManager.scala:194)
+        at scala.runtime.java8.JFunction0$mcV$sp.apply(JFunction0$mcV$sp.scala:18)
+        at scala.Option.fold(Option.scala:263)
+        at org.apache.spark.util.SparkShutdownHookManager.install(ShutdownHookManager.scala:195)
+        at org.apache.spark.util.ShutdownHookManager$.shutdownHooks$lzycompute(ShutdownHookManager.scala:55)
+        at org.apache.spark.util.ShutdownHookManager$.shutdownHooks(ShutdownHookManager.scala:53)
+        at org.apache.spark.util.ShutdownHookManager$.addShutdownHook(ShutdownHookManager.scala:159)
+        at org.apache.spark.util.ShutdownHookManager$.<clinit>(ShutdownHookManager.scala:63)
+        at org.apache.spark.util.Utils$.createTempDir(Utils.scala:249)
+        at org.apache.spark.util.SparkFileUtils.createTempDir(SparkFileUtils.scala:140)
+        at org.apache.spark.util.SparkFileUtils.createTempDir$(SparkFileUtils.scala:139)
+        at org.apache.spark.util.Utils$.createTempDir(Utils.scala:97)
+        at org.apache.spark.deploy.SparkSubmit.prepareSubmitEnvironment(SparkSubmit.scala:381)
+        at org.apache.spark.deploy.SparkSubmit.org$apache$spark$deploy$SparkSubmit$$runMain(SparkSubmit.scala:965)
+        at org.apache.spark.deploy.SparkSubmit.doRunMain$1(SparkSubmit.scala:203)
+        at org.apache.spark.deploy.SparkSubmit.submit(SparkSubmit.scala:226)
+        at org.apache.spark.deploy.SparkSubmit.doSubmit(SparkSubmit.scala:95)
+        at org.apache.spark.deploy.SparkSubmit$$anon$2.doSubmit(SparkSubmit.scala:1171)
+        at org.apache.spark.deploy.SparkSubmit$.main(SparkSubmit.scala:1180)
+        at org.apache.spark.deploy.SparkSubmit.main(SparkSubmit.scala)
+Caused by: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset.
+        at org.apache.hadoop.util.Shell.checkHadoopHomeInner(Shell.java:522)
+        at org.apache.hadoop.util.Shell.checkHadoopHome(Shell.java:493)
+        at org.apache.hadoop.util.Shell.<clinit>(Shell.java:570)
+        ... 27 more
+
+
+Spark session stopped.
+Traceback (most recent call last):
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\src\run_silver_pipeline.py", line 376, in <module>
     run_silver_pipeline()
+    ~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\src\run_silver_pipeline.py", line 291, in run_silver_pipeline
+    committed = write_batch_outputs(
+        batch_id=batch_id,
+    ...<4 lines>...
+        processed_article_ids=batch_article_ids
+    )
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\src\safe_output_writer.py", line 241, in write_batch_outputs
+    write_dataframe(
+    ~~~~~~~~~~~~~~~^
+        news_with_sentiment_df,
+        ^^^^^^^^^^^^^^^^^^^^^^^
+        staged_news
+        ^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\silver_news\src\safe_output_writer.py", line 56, in write_dataframe
+    .parquet(str(output_path))
+     ~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\sql\readwriter.py", line 2099, in parquet
+    self._jwrite.parquet(path)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\py4j\java_gateway.py", line 1362, in __call__
+    return_value = get_return_value(
+        answer, self.gateway_client, self.target_id, self.name)
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\errors\exceptions\captured.py", line 256, in deco
+    return f(*a, **kw)
+  File "C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\py4j\protocol.py", line 327, in get_return_value
+    raise Py4JJavaError(
+        "An error occurred while calling {0}{1}{2}.\n".
+        format(target_id, ".", name), value)
+py4j.protocol.Py4JJavaError: An error occurred while calling o493.parquet.
+: java.lang.RuntimeException: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
+        at org.apache.hadoop.util.Shell.getWinUtilsPath(Shell.java:790)
+        at org.apache.hadoop.util.Shell.getSetPermissionCommand(Shell.java:299)
+        at org.apache.hadoop.util.Shell.getSetPermissionCommand(Shell.java:315)
+        at org.apache.hadoop.fs.RawLocalFileSystem.setPermission(RawLocalFileSystem.java:1179)
+        at org.apache.hadoop.fs.RawLocalFileSystem.mkOneDirWithMode(RawLocalFileSystem.java:861)
+        at org.apache.hadoop.fs.RawLocalFileSystem.mkdirsWithOptionalPermission(RawLocalFileSystem.java:901)
+        at org.apache.hadoop.fs.RawLocalFileSystem.mkdirs(RawLocalFileSystem.java:873)
+        at org.apache.hadoop.fs.RawLocalFileSystem.mkdirsWithOptionalPermission(RawLocalFileSystem.java:900)
+        at org.apache.hadoop.fs.RawLocalFileSystem.mkdirs(RawLocalFileSystem.java:873)
+        at org.apache.hadoop.fs.RawLocalFileSystem.mkdirsWithOptionalPermission(RawLocalFileSystem.java:900)
+        at org.apache.hadoop.fs.RawLocalFileSystem.mkdirs(RawLocalFileSystem.java:873)
+        at org.apache.hadoop.fs.ChecksumFileSystem.mkdirs(ChecksumFileSystem.java:1047)
+        at org.apache.hadoop.mapreduce.lib.output.FileOutputCommitter.setupJob(FileOutputCommitter.java:361)
+        at org.apache.spark.internal.io.HadoopMapReduceCommitProtocol.setupJob(HadoopMapReduceCommitProtocol.scala:186)
+        at org.apache.spark.sql.execution.datasources.FileFormatWriter$.write(FileFormatWriter.scala:168)
+        at org.apache.spark.sql.execution.datasources.InsertIntoHadoopFsRelationCommand.run(InsertIntoHadoopFsRelationCommand.scala:200)
+        at org.apache.spark.sql.execution.command.DataWritingCommandExec.sideEffectResult$lzycompute(commands.scala:117)
+        at org.apache.spark.sql.execution.command.DataWritingCommandExec.sideEffectResult(commands.scala:115)
+        at org.apache.spark.sql.execution.command.DataWritingCommandExec.executeCollect(commands.scala:129)
+        at org.apache.spark.sql.execution.QueryExecution$.$anonfun$runCommand$2(QueryExecution.scala:997)
+        at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId0$8(SQLExecution.scala:228)
+        at org.apache.spark.sql.execution.SQLExecution$.withSessionTagsApplied(SQLExecution.scala:352)
+        at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId0$7(SQLExecution.scala:189)
+        at org.apache.spark.JobArtifactSet$.withActiveJobArtifactState(JobArtifactSet.scala:94)
+        at org.apache.spark.sql.artifact.ArtifactManager.$anonfun$withResources$1(ArtifactManager.scala:112)
+        at org.apache.spark.sql.artifact.ArtifactManager.withClassLoaderIfNeeded(ArtifactManager.scala:106)
+        at org.apache.spark.sql.artifact.ArtifactManager.withResources(ArtifactManager.scala:111)
+        at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId0$6(SQLExecution.scala:189)
+        at org.apache.spark.sql.execution.SQLExecution$.withSQLConfPropagated(SQLExecution.scala:375)
+        at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId0$1(SQLExecution.scala:188)
+        at org.apache.spark.sql.SparkSession.withActive(SparkSession.scala:810)
+        at org.apache.spark.sql.execution.SQLExecution$.withNewExecutionId0(SQLExecution.scala:130)
+        at org.apache.spark.sql.execution.SQLExecution$.withNewExecutionId(SQLExecution.scala:317)
+        at org.apache.spark.sql.execution.QueryExecution$.$anonfun$runCommand$1(QueryExecution.scala:995)
+        at org.apache.spark.sql.execution.QueryExecution$.withInternalError(QueryExecution.scala:927)
+        at org.apache.spark.sql.execution.QueryExecution$.runCommand(QueryExecution.scala:995)
+        at org.apache.spark.sql.execution.QueryExecution.org$apache$spark$sql$execution$QueryExecution$$eagerlyExecute$1(QueryExecution.scala:262)
+        at org.apache.spark.sql.execution.QueryExecution$$anonfun$eagerlyExecuteCommands$1.applyOrElse(QueryExecution.scala:277)
+        at org.apache.spark.sql.execution.QueryExecution$$anonfun$eagerlyExecuteCommands$1.applyOrElse(QueryExecution.scala:270)
+        at org.apache.spark.sql.catalyst.trees.TreeNode.$anonfun$transformDownWithPruning$1(TreeNode.scala:495)
+        at org.apache.spark.sql.catalyst.trees.CurrentOrigin$.withOrigin(origin.scala:107)
+        at org.apache.spark.sql.catalyst.trees.TreeNode.transformDownWithPruning(TreeNode.scala:495)
+        at org.apache.spark.sql.catalyst.plans.logical.LogicalPlan.org$apache$spark$sql$catalyst$plans$logical$AnalysisHelper$$super$transformDownWithPruning(LogicalPlan.scala:38)
+        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.transformDownWithPruning(AnalysisHelper.scala:360)
+        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.transformDownWithPruning$(AnalysisHelper.scala:356)
+        at org.apache.spark.sql.catalyst.plans.logical.LogicalPlan.transformDownWithPruning(LogicalPlan.scala:38)
+        at org.apache.spark.sql.catalyst.plans.logical.LogicalPlan.transformDownWithPruning(LogicalPlan.scala:38)
+        at org.apache.spark.sql.catalyst.trees.TreeNode.transformDown(TreeNode.scala:471)
+        at org.apache.spark.sql.execution.QueryExecution.eagerlyExecuteCommands(QueryExecution.scala:270)
+        at org.apache.spark.sql.execution.QueryExecution.$anonfun$lazyCommandExecuted$1(QueryExecution.scala:234)
+        at scala.util.Try$.apply(Try.scala:217)
+        at org.apache.spark.util.Utils$.doTryWithCallerStacktrace(Utils.scala:1407)
+        at org.apache.spark.util.Utils$.getTryWithCallerStacktrace(Utils.scala:1457)
+        at org.apache.spark.util.LazyTry.get(LazyTry.scala:61)
+        at org.apache.spark.sql.execution.QueryExecution.$anonfun$commandExecuted$1(QueryExecution.scala:240)
+        at org.apache.spark.sql.execution.QueryExecution.withAbortTransactionOnFailure(QueryExecution.scala:653)
+        at org.apache.spark.sql.execution.QueryExecution.commandExecuted(QueryExecution.scala:240)
+        at org.apache.spark.sql.execution.QueryExecution.assertCommandExecuted(QueryExecution.scala:325)
+        at org.apache.spark.sql.classic.DataFrameWriter.runCommand(DataFrameWriter.scala:636)
+        at org.apache.spark.sql.classic.DataFrameWriter.save(DataFrameWriter.scala:116)
+        at org.apache.spark.sql.DataFrameWriter.parquet(DataFrameWriter.scala:383)
+        at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+        at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+        at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+        at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+        at py4j.reflection.MethodInvoker.invoke(MethodInvoker.java:244)
+        at py4j.reflection.ReflectionEngine.invoke(ReflectionEngine.java:374)
+        at py4j.Gateway.invoke(Gateway.java:282)
+        at py4j.commands.AbstractCommand.invokeMethod(AbstractCommand.java:132)
+        at py4j.commands.CallCommand.execute(CallCommand.java:79)
+        at py4j.ClientServerConnection.waitForCommands(ClientServerConnection.java:184)
+        at py4j.ClientServerConnection.run(ClientServerConnection.java:108)
+        at java.base/java.lang.Thread.run(Thread.java:840)
+Caused by: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
+        at org.apache.hadoop.util.Shell.fileNotFoundException(Shell.java:602)
+        at org.apache.hadoop.util.Shell.getHadoopHomeDir(Shell.java:623)
+        at org.apache.hadoop.util.Shell.getQualifiedBin(Shell.java:646)
+        at org.apache.hadoop.util.Shell.<clinit>(Shell.java:743)
+        at org.apache.hadoop.util.StringUtils.<clinit>(StringUtils.java:80)
+        at org.apache.hadoop.conf.Configuration.getTimeDurationHelper(Configuration.java:1938)
+        at org.apache.hadoop.conf.Configuration.getTimeDuration(Configuration.java:1896)
+        at org.apache.hadoop.conf.Configuration.getTimeDuration(Configuration.java:1869)
+        at org.apache.hadoop.util.ShutdownHookManager.getShutdownTimeout(ShutdownHookManager.java:184)
+        at org.apache.hadoop.util.ShutdownHookManager$HookEntry.<init>(ShutdownHookManager.java:208)
+        at org.apache.hadoop.util.ShutdownHookManager.addShutdownHook(ShutdownHookManager.java:305)
+        at org.apache.spark.util.SparkShutdownHookManager.$anonfun$install$1(ShutdownHookManager.scala:194)
+        at scala.runtime.java8.JFunction0$mcV$sp.apply(JFunction0$mcV$sp.scala:18)
+        at scala.Option.fold(Option.scala:263)
+        at org.apache.spark.util.SparkShutdownHookManager.install(ShutdownHookManager.scala:195)
+        at org.apache.spark.util.ShutdownHookManager$.shutdownHooks$lzycompute(ShutdownHookManager.scala:55)
+        at org.apache.spark.util.ShutdownHookManager$.shutdownHooks(ShutdownHookManager.scala:53)
+        at org.apache.spark.util.ShutdownHookManager$.addShutdownHook(ShutdownHookManager.scala:159)
+        at org.apache.spark.util.ShutdownHookManager$.<clinit>(ShutdownHookManager.scala:63)
+        at org.apache.spark.util.Utils$.createTempDir(Utils.scala:249)
+        at org.apache.spark.util.SparkFileUtils.createTempDir(SparkFileUtils.scala:140)
+        at org.apache.spark.util.SparkFileUtils.createTempDir$(SparkFileUtils.scala:139)
+        at org.apache.spark.util.Utils$.createTempDir(Utils.scala:97)
+        at org.apache.spark.deploy.SparkSubmit.prepareSubmitEnvironment(SparkSubmit.scala:381)
+        at org.apache.spark.deploy.SparkSubmit.org$apache$spark$deploy$SparkSubmit$$runMain(SparkSubmit.scala:965)
+        at org.apache.spark.deploy.SparkSubmit.doRunMain$1(SparkSubmit.scala:203)
+        at org.apache.spark.deploy.SparkSubmit.submit(SparkSubmit.scala:226)
+        at org.apache.spark.deploy.SparkSubmit.doSubmit(SparkSubmit.scala:95)
+        at org.apache.spark.deploy.SparkSubmit$$anon$2.doSubmit(SparkSubmit.scala:1171)
+        at org.apache.spark.deploy.SparkSubmit$.main(SparkSubmit.scala:1180)
+        at org.apache.spark.deploy.SparkSubmit.main(SparkSubmit.scala)
+Caused by: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset.
+        at org.apache.hadoop.util.Shell.checkHadoopHomeInner(Shell.java:522)
+        at org.apache.hadoop.util.Shell.checkHadoopHome(Shell.java:493)
+        at org.apache.hadoop.util.Shell.<clinit>(Shell.java:570)
+        ... 27 more
+
+SUCCESS: The process with PID 26588 (child process of PID 17596) has been terminated.
+SUCCESS: The process with PID 17596 (child process of PID 29860) has been terminated.
+SUCCESS: The process with PID 29860 (child process of PID 5024) has been terminated.
+(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> 
