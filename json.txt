@@ -1,388 +1,126 @@
 
-import torch
-
+import os
+import sys
 from pathlib import Path
 
-from transformers import (
-    AutoTokenizer,
-    AutoModelForSequenceClassification
+# --------------------------------------------------
+# 1. PROJECT PATH
+# --------------------------------------------------
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+SRC_PATH = PROJECT_ROOT / "silver_news" / "src"
+
+sys.path.insert(0, str(SRC_PATH))
+
+# --------------------------------------------------
+# 2. PYTHON CONFIGURATION
+# --------------------------------------------------
+
+os.environ["PYSPARK_PYTHON"] = sys.executable
+os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
+
+from pyspark.sql import SparkSession
+
+from sentiment_analysis import analyse_sentiment
+
+
+# --------------------------------------------------
+# 3. CREATE SPARK SESSION
+# --------------------------------------------------
+
+spark = (
+    SparkSession.builder
+    .master("local[*]")
+    .appName("TestFinBERTSentiment")
+    .config("spark.sql.session.timeZone", "UTC")
+    .getOrCreate()
 )
 
-from pyspark.sql import functions as F
-from pyspark.sql.types import StringType, DoubleType
+spark.sparkContext.setLogLevel("ERROR")
 
 
-# --------------------------------------------------
-# 1. PROJECT PATHS AND CONFIGURATION
-# --------------------------------------------------
+try:
 
-PROJECT_FOLDER = Path(__file__).resolve().parents[1]
+    # --------------------------------------------------
+    # 4. CREATE SAMPLE CLEANED NEWS
+    # --------------------------------------------------
 
-MODEL_PATH = PROJECT_FOLDER / "models" / "finbert"
+    print("\n========== CREATING SAMPLE NEWS ==========")
 
-BATCH_SIZE = 8
-MAX_LENGTH = 512
-
-
-# --------------------------------------------------
-# 2. LOAD FINBERT MODEL
-# --------------------------------------------------
-
-def load_finbert():
-
-    print("\n========== LOADING FINBERT ==========")
-
-    required_files = [
-        "config.json",
-        "model.safetensors",
-        "tokenizer_config.json",
-        "special_tokens_map.json",
-        "vocab.txt"
-    ]
-
-    missing_files = [
-        filename
-        for filename in required_files
-        if not (MODEL_PATH / filename).exists()
-    ]
-
-    if missing_files:
-        raise FileNotFoundError(
-            f"Missing FinBERT model files: {missing_files}"
-        )
-
-    device = torch.device(
-        "cuda" if torch.cuda.is_available() else "cpu"
-    )
-
-    print("Using device:", device)
-
-    tokenizer = AutoTokenizer.from_pretrained(
-        str(MODEL_PATH),
-        local_files_only=True
-    )
-
-    model = AutoModelForSequenceClassification.from_pretrained(
-        str(MODEL_PATH),
-        local_files_only=True
-    )
-
-    model.to(device)
-    model.eval()
-
-    # Read label mapping from model configuration.
-    id2label = model.config.id2label
-
-    labels = {
-        str(
-            id2label.get(
-                index,
-                id2label.get(str(index), f"LABEL_{index}")
-            )
-        ).lower(): index
-        for index in range(model.config.num_labels)
-    }
-
-    required_labels = {"positive", "negative", "neutral"}
-
-    if not required_labels.issubset(labels):
-        raise ValueError(
-            f"Unexpected FinBERT labels: {labels}"
-        )
-
-    print("FinBERT loaded successfully!")
-    print("Sentiment labels:", labels)
-
-    return tokenizer, model, device, labels
-
-
-# --------------------------------------------------
-# 3. BATCH SENTIMENT ANALYSIS
-# --------------------------------------------------
-
-def analyse_batch(news_texts, tokenizer, model, device, labels):
-
-    inputs = tokenizer(
-        news_texts,
-        return_tensors="pt",
-        padding=True,
-        truncation=True,
-        max_length=MAX_LENGTH
-    )
-
-    inputs = {
-        key: value.to(device)
-        for key, value in inputs.items()
-    }
-
-    with torch.inference_mode():
-
-        outputs = model(**inputs)
-
-        probabilities = torch.softmax(
-            outputs.logits,
-            dim=-1
-        )
-
-    probabilities = probabilities.cpu().tolist()
-
-    results = []
-
-    for article_probabilities in probabilities:
-
-        scores = {
-            label: article_probabilities[index]
-            for label, index in labels.items()
-        }
-
-        positive_score = scores["positive"]
-        negative_score = scores["negative"]
-        neutral_score = scores["neutral"]
-
-        sentiment = max(
-            ("positive", "negative", "neutral"),
-            key=lambda label: scores[label]
-        )
-
-        sentiment_score = (
-            positive_score - negative_score
-        )
-
-        results.append({
-            "sentiment": sentiment,
-            "positive_score": positive_score,
-            "negative_score": negative_score,
-            "neutral_score": neutral_score,
-            "sentiment_score": sentiment_score
-        })
-
-    return results
-
-
-# --------------------------------------------------
-# 4. PREPARE NEWS TEXT
-# --------------------------------------------------
-
-def prepare_news_text(article):
-
-    text = article.get("text_for_analysis")
-
-    if not text or not str(text).strip():
-        text = article.get("cleaned_headline")
-
-    if not text or not str(text).strip():
-        text = article.get("headline")
-
-    if not text or not str(text).strip():
-        raise ValueError(
-            f"No usable text for article: "
-            f"{article.get('article_id')}"
-        )
-
-    return str(text)
-
-
-# --------------------------------------------------
-# 5. MAIN SENTIMENT ANALYSIS FUNCTION
-# --------------------------------------------------
-
-def analyse_sentiment(news_with_tickers_df, news_by_ticker_df):
-
-    print("\n========== STARTING SENTIMENT ANALYSIS ==========")
-
-    # Get Spark session from the input DataFrame.
-    spark = news_with_tickers_df.sparkSession
-
-    # Convert article-level records into Python dictionaries.
     news_records = [
-        row.asDict(recursive=True)
-        for row in news_with_tickers_df.collect()
+
+        {
+            "article_id": "TEST-001",
+            "headline": "Company reports strong quarterly profit",
+            "cleaned_headline": "Company reports strong quarterly profit",
+            "cleaned_full_text": "Company reports strong quarterly profit growth.",
+            "text_for_analysis": "Company reports strong quarterly profit growth.",
+            "matched_tickers": ["RELIANCE"]
+        },
+
+        {
+            "article_id": "TEST-002",
+            "headline": "Company faces significant financial losses",
+            "cleaned_headline": "Company faces significant financial losses",
+            "cleaned_full_text": "Company faces significant financial losses.",
+            "text_for_analysis": "Company faces significant financial losses.",
+            "matched_tickers": ["TCS", "INFY"]
+        }
     ]
 
-    if not news_records:
-        raise ValueError(
-            "No articles available for sentiment analysis."
-        )
-
-    print("Total unique articles:", len(news_records))
+    news_with_tickers_df = spark.createDataFrame(
+        news_records
+    )
 
     # --------------------------------------------------
-    # 6. LOAD MODEL ONCE
-    # --------------------------------------------------
-
-    tokenizer, model, device, labels = load_finbert()
-
-    # --------------------------------------------------
-    # 7. PREPARE TEXT
-    # --------------------------------------------------
-
-    news_texts = [
-        prepare_news_text(article)
-        for article in news_records
-    ]
-
-    # --------------------------------------------------
-    # 8. RUN FINBERT IN BATCHES
-    # --------------------------------------------------
-
-    print("\nRunning FinBERT inference...")
-
-    sentiment_results = []
-
-    total_articles = len(news_texts)
-
-    for start in range(0, total_articles, BATCH_SIZE):
-
-        end = min(
-            start + BATCH_SIZE,
-            total_articles
-        )
-
-        batch_texts = news_texts[start:end]
-
-        batch_results = analyse_batch(
-            batch_texts,
-            tokenizer,
-            model,
-            device,
-            labels
-        )
-
-        sentiment_results.extend(batch_results)
-
-        print(
-            f"Processed {end}/{total_articles} articles"
-        )
-
-    # --------------------------------------------------
-    # 9. ENRICH ARTICLE-LEVEL NEWS
-    # --------------------------------------------------
-
-    news_with_sentiment = []
-
-    for article, sentiment in zip(
-        news_records,
-        sentiment_results
-    ):
-
-        enriched_article = {
-            **article,
-            **sentiment
-        }
-
-        news_with_sentiment.append(enriched_article)
-
-    print("\nArticle-level sentiment completed.")
-
-    # --------------------------------------------------
-    # 10. CREATE SENTIMENT LOOKUP
-    # --------------------------------------------------
-
-    sentiment_lookup = {
-        article["article_id"]: {
-            "sentiment": article["sentiment"],
-            "positive_score": article["positive_score"],
-            "negative_score": article["negative_score"],
-            "neutral_score": article["neutral_score"],
-            "sentiment_score": article["sentiment_score"]
-        }
-        for article in news_with_sentiment
-    }
-
-    # --------------------------------------------------
-    # 11. ENRICH NEWS BY TICKER
+    # 5. CREATE SAMPLE NEWS BY TICKER
     # --------------------------------------------------
 
     ticker_records = [
-        row.asDict(recursive=True)
-        for row in news_by_ticker_df.collect()
+
+        {
+            **news_records[0],
+            "ticker": "RELIANCE"
+        },
+
+        {
+            **news_records[1],
+            "ticker": "TCS"
+        },
+
+        {
+            **news_records[1],
+            "ticker": "INFY"
+        }
     ]
 
-    news_by_ticker_with_sentiment = []
-
-    for record in ticker_records:
-
-        article_id = record["article_id"]
-
-        sentiment = sentiment_lookup.get(article_id)
-
-        if sentiment is None:
-            raise ValueError(
-                f"Sentiment missing for article: {article_id}"
-            )
-
-        enriched_record = {
-            **record,
-            **sentiment
-        }
-
-        news_by_ticker_with_sentiment.append(
-            enriched_record
-        )
-
-    # --------------------------------------------------
-    # 12. CONVERT RESULTS BACK TO SPARK DATAFRAMES
-    # --------------------------------------------------
-
-    article_sentiment_df = spark.createDataFrame(
-        news_with_sentiment
+    news_by_ticker_df = spark.createDataFrame(
+        ticker_records
     )
 
-    if news_by_ticker_with_sentiment:
-
-        ticker_sentiment_df = spark.createDataFrame(
-            news_by_ticker_with_sentiment
-        )
-
-    else:
-
-        # Preserve the original schema when no tickers match.
-        ticker_sentiment_df = (
-            news_by_ticker_df
-            .withColumn(
-                "sentiment",
-                F.lit(None).cast(StringType())
-            )
-            .withColumn(
-                "positive_score",
-                F.lit(None).cast(DoubleType())
-            )
-            .withColumn(
-                "negative_score",
-                F.lit(None).cast(DoubleType())
-            )
-            .withColumn(
-                "neutral_score",
-                F.lit(None).cast(DoubleType())
-            )
-            .withColumn(
-                "sentiment_score",
-                F.lit(None).cast(DoubleType())
-            )
-        )
+    print("Sample articles:", len(news_records))
+    print("Article-ticker mappings:", len(ticker_records))
 
     # --------------------------------------------------
-    # 13. DISPLAY SUMMARY
+    # 6. RUN FINBERT SENTIMENT ANALYSIS
     # --------------------------------------------------
 
-    print("\n========== SENTIMENT ANALYSIS SUMMARY ==========")
+    print("\n========== RUNNING FINBERT ==========")
 
-    print(
-        "Articles processed:",
-        len(news_with_sentiment)
+    article_sentiment_df, ticker_sentiment_df = analyse_sentiment(
+        news_with_tickers_df,
+        news_by_ticker_df
     )
 
-    print(
-        "Article-ticker records:",
-        len(news_by_ticker_with_sentiment)
-    )
+    # --------------------------------------------------
+    # 7. VERIFY ARTICLE-LEVEL RESULTS
+    # --------------------------------------------------
 
-    print("\nARTICLE-LEVEL SENTIMENT:")
+    print("\n========== ARTICLE SENTIMENT ==========")
 
     article_sentiment_df.select(
         "article_id",
-        "cleaned_headline",
-        "matched_tickers",
         "sentiment",
         "positive_score",
         "negative_score",
@@ -390,7 +128,11 @@ def analyse_sentiment(news_with_tickers_df, news_by_ticker_df):
         "sentiment_score"
     ).show(truncate=False)
 
-    print("\nTICKER-LEVEL SENTIMENT:")
+    # --------------------------------------------------
+    # 8. VERIFY TICKER-LEVEL RESULTS
+    # --------------------------------------------------
+
+    print("\n========== TICKER SENTIMENT ==========")
 
     ticker_sentiment_df.select(
         "article_id",
@@ -399,7 +141,46 @@ def analyse_sentiment(news_with_tickers_df, news_by_ticker_df):
         "sentiment_score"
     ).show(truncate=False)
 
-    print("\nFINBERT SENTIMENT ANALYSIS COMPLETED!")
+    # --------------------------------------------------
+    # 9. VALIDATION CHECKS
+    # --------------------------------------------------
 
-    # Return both DataFrames to the pipeline runner.
-    return article_sentiment_df, ticker_sentiment_df
+    article_count = article_sentiment_df.count()
+    ticker_count = ticker_sentiment_df.count()
+
+    missing_sentiment = article_sentiment_df.filter(
+        "sentiment IS NULL"
+    ).count()
+
+    missing_scores = article_sentiment_df.filter(
+        """
+        positive_score IS NULL OR
+        negative_score IS NULL OR
+        neutral_score IS NULL OR
+        sentiment_score IS NULL
+        """
+    ).count()
+
+    print("\n========== TEST SUMMARY ==========")
+
+    print("Articles processed:", article_count)
+    print("Ticker mappings processed:", ticker_count)
+    print("Missing sentiment:", missing_sentiment)
+    print("Missing sentiment scores:", missing_scores)
+
+    if (
+        article_count == 2
+        and ticker_count == 3
+        and missing_sentiment == 0
+        and missing_scores == 0
+    ):
+        print("\nFINBERT TEST PASSED!")
+
+    else:
+        print("\nFINBERT TEST NEEDS REVIEW.")
+
+finally:
+
+    spark.stop()
+
+    print("\nSPARK SESSION STOPPED.")
