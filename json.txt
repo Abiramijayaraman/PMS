@@ -1,129 +1,246 @@
 
-from pyspark.sql.functions import (
-    col,
-    regexp_replace,
-    trim,
-    coalesce,
-    lit,
-    when
-)
+import json
+import shutil
+import re
+from pathlib import Path
 
 
-def clean_news(news_df):
+# --------------------------------------------------
+# 1. PROJECT PATHS
+# --------------------------------------------------
 
-    print("\n========== STARTING HTML CLEANING ==========")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-    # 1. Replace HTML block tags with spaces before removing tags.
-    # This prevents words from adjacent HTML elements joining together.
-    cleaned_df = news_df.withColumn(
-        "cleaned_full_text",
-        regexp_replace(
-            coalesce(col("full_text"), lit("")),
-            r"(?i)<\s*(br|/p|p|/div|div|/li|li|/font|font)\b[^>]*>",
-            " "
+DATA_PATH = PROJECT_ROOT / "silver_news" / "data"
+
+STAGING_PATH = DATA_PATH / "_staging"
+
+SILVER_PATH = DATA_PATH / "silver"
+
+NEWS_PATH = SILVER_PATH / "news"
+
+NEWS_BY_TICKER_PATH = SILVER_PATH / "news_by_ticker"
+
+DLQ_PATH = DATA_PATH / "processed" / "dead_letter"
+
+CHECKPOINT_PATH = DATA_PATH / "checkpoints"
+
+COMMITTED_BATCHES_PATH = CHECKPOINT_PATH / "committed_batches"
+
+
+# --------------------------------------------------
+# 2. CHECK WHETHER BATCH IS ALREADY COMMITTED
+# --------------------------------------------------
+
+def is_batch_committed(batch_id):
+
+    marker_path = (
+        COMMITTED_BATCHES_PATH
+        / f"{batch_id}.json"
+    )
+
+    return marker_path.exists()
+
+
+# --------------------------------------------------
+# 3. WRITE A SPARK DATAFRAME TO STAGING
+# --------------------------------------------------
+
+def write_dataframe(dataframe, output_path):
+
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    (
+        dataframe.write
+        .mode("errorifexists")
+        .parquet(str(output_path))
+    )
+
+
+# --------------------------------------------------
+# 4. COMMIT BATCH MARKER
+# --------------------------------------------------
+
+def create_commit_marker(batch_id):
+
+    COMMITTED_BATCHES_PATH.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    marker_path = (
+        COMMITTED_BATCHES_PATH
+        / f"{batch_id}.json"
+    )
+
+    temporary_path = marker_path.with_suffix(".tmp")
+
+    marker_data = {
+        "batch_id": batch_id,
+        "status": "COMMITTED"
+    }
+
+    with open(
+        temporary_path,
+        "w",
+        encoding="utf-8"
+    ) as file:
+
+        json.dump(
+            marker_data,
+            file,
+            indent=4
         )
+
+    temporary_path.replace(marker_path)
+
+
+# --------------------------------------------------
+# 5. WRITE ALL BATCH OUTPUTS SAFELY
+# --------------------------------------------------
+
+def write_batch_outputs(
+    batch_id,
+    news_with_sentiment_df,
+    news_by_ticker_with_sentiment_df,
+    invalid_df
+):
+
+    print("\n========== SAFE BATCH WRITING ==========")
+
+    # Validate batch ID to keep paths predictable.
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", batch_id):
+        raise ValueError("Invalid batch ID")
+
+    # Avoid writing a batch that is already committed.
+    if is_batch_committed(batch_id):
+
+        print("Batch already committed:", batch_id)
+
+        return False
+
+    # Each batch gets its own output directories.
+    staging_batch = STAGING_PATH / batch_id
+
+    final_news = NEWS_PATH / f"batch_id={batch_id}"
+
+    final_ticker = (
+        NEWS_BY_TICKER_PATH / f"batch_id={batch_id}"
     )
 
-    # 2. Remove remaining HTML tags.
-    cleaned_df = cleaned_df.withColumn(
-        "cleaned_full_text",
-        regexp_replace(
-            col("cleaned_full_text"),
-            r"<[^>]*>",
-            " "
+    final_dlq = DLQ_PATH / f"batch_id={batch_id}"
+
+    final_paths = [
+        final_news,
+        final_ticker,
+        final_dlq
+    ]
+
+    # Remove leftovers from an earlier incomplete attempt.
+    if staging_batch.exists():
+        shutil.rmtree(staging_batch)
+
+    for path in final_paths:
+        if path.exists():
+            shutil.rmtree(path)
+
+    staging_batch.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    staged_news = staging_batch / "news"
+
+    staged_ticker = staging_batch / "news_by_ticker"
+
+    staged_dlq = staging_batch / "dead_letter"
+
+    try:
+
+        # ------------------------------------------
+        # A. WRITE ARTICLE-LEVEL SILVER DATA
+        # ------------------------------------------
+
+        print("\nWriting article-level Silver data...")
+
+        write_dataframe(
+            news_with_sentiment_df,
+            staged_news
         )
-    )
 
-    # 3. Decode common HTML entities.
-    # Decode ampersand last to avoid accidental double decoding.
-    cleaned_df = cleaned_df.withColumn(
-        "cleaned_full_text",
-        regexp_replace(
-            col("cleaned_full_text"),
-            r"(?i)&nbsp;|&#160;|&#xA0;",
-            " "
+        # ------------------------------------------
+        # B. WRITE TICKER-LEVEL SILVER DATA
+        # ------------------------------------------
+
+        print("\nWriting ticker-level Silver data...")
+
+        write_dataframe(
+            news_by_ticker_with_sentiment_df,
+            staged_ticker
         )
-    )
 
-    cleaned_df = cleaned_df.withColumn(
-        "cleaned_full_text",
-        regexp_replace(
-            col("cleaned_full_text"),
-            r"(?i)&quot;|&#34;|&ldquo;|&rdquo;",
-            '"'
+        # ------------------------------------------
+        # C. WRITE DEAD LETTER RECORDS
+        # ------------------------------------------
+
+        print("\nWriting DLQ records...")
+
+        write_dataframe(
+            invalid_df,
+            staged_dlq
         )
-    )
 
-    cleaned_df = cleaned_df.withColumn(
-        "cleaned_full_text",
-        regexp_replace(
-            col("cleaned_full_text"),
-            r"(?i)&apos;|&#39;|&#x27;|&lsquo;|&rsquo;",
-            "'"
+        # ------------------------------------------
+        # D. MOVE STAGED OUTPUTS TO FINAL PATHS
+        # ------------------------------------------
+
+        NEWS_PATH.mkdir(parents=True, exist_ok=True)
+
+        NEWS_BY_TICKER_PATH.mkdir(
+            parents=True,
+            exist_ok=True
         )
-    )
 
-    cleaned_df = cleaned_df.withColumn(
-        "cleaned_full_text",
-        regexp_replace(
-            col("cleaned_full_text"),
-            r"(?i)&lt;",
-            "<"
-        )
-    )
+        DLQ_PATH.mkdir(parents=True, exist_ok=True)
 
-    cleaned_df = cleaned_df.withColumn(
-        "cleaned_full_text",
-        regexp_replace(
-            col("cleaned_full_text"),
-            r"(?i)&gt;",
-            ">"
-        )
-    )
+        staged_news.rename(final_news)
 
-    cleaned_df = cleaned_df.withColumn(
-        "cleaned_full_text",
-        regexp_replace(
-            col("cleaned_full_text"),
-            r"(?i)&amp;",
-            "&"
-        )
-    )
+        staged_ticker.rename(final_ticker)
 
-    # 4. Normalize whitespace.
-    cleaned_df = cleaned_df.withColumn(
-        "cleaned_full_text",
-        trim(
-            regexp_replace(
-                col("cleaned_full_text"),
-                r"\s+",
-                " "
-            )
-        )
-    )
+        staged_dlq.rename(final_dlq)
 
-    # 5. Clean headline separately.
-    cleaned_df = cleaned_df.withColumn(
-        "cleaned_headline",
-        trim(
-            regexp_replace(
-                coalesce(col("headline"), lit("")),
-                r"\s+",
-                " "
-            )
-        )
-    )
+        # ------------------------------------------
+        # E. COMMIT MARKER — LAST STEP
+        # ------------------------------------------
 
-    # 6. Select text for sentiment analysis.
-    # Prefer headline; use cleaned full text as fallback.
-    cleaned_df = cleaned_df.withColumn(
-        "text_for_analysis",
-        when(
-            col("cleaned_headline") != "",
-            col("cleaned_headline")
-        ).otherwise(col("cleaned_full_text"))
-    )
+        create_commit_marker(batch_id)
 
-    print("HTML cleaning completed.")
+        print("\n========================================")
+        print("BATCH COMMITTED SUCCESSFULLY")
+        print("========================================")
 
-    return cleaned_df
+        print("Batch ID:", batch_id)
+        print("News output:", final_news)
+        print("Ticker output:", final_ticker)
+        print("DLQ output:", final_dlq)
+
+        return True
+
+    except Exception:
+
+        # Remove partial outputs if the batch failed.
+        for path in final_paths:
+
+            if path.exists():
+                shutil.rmtree(path)
+
+        raise
+
+    finally:
+
+        # Remove remaining staging data.
+        if staging_batch.exists():
+            shutil.rmtree(staging_batch)
