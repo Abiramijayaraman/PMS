@@ -1,105 +1,121 @@
 
-from pyspark.sql.functions import (
-    col,
-    trim,
-    when,
-    lit,
-    concat_ws
+import os
+import sys
+
+# Configure Python for Spark.
+os.environ["PYSPARK_PYTHON"] = sys.executable
+os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
+
+from pyspark.sql import SparkSession
+
+from read_bronze import read_new_bronze
+from deduplicate_news import deduplicate_news
+from validate_news import validate_news
+
+
+# --------------------------------------------------
+# 1. CREATE SPARK SESSION
+# --------------------------------------------------
+
+spark = (
+    SparkSession.builder
+    .appName("IncrementalSilverNewsPipeline")
+    .master("local[*]")
+    .config("spark.sql.session.timeZone", "UTC")
+    .getOrCreate()
 )
 
+spark.sparkContext.setLogLevel("ERROR")
 
-# --------------------------------------------------
-# 1. NEWS VALIDATION
-# --------------------------------------------------
 
-def validate_news(candidates_df):
+try:
 
-    print("\n========== STARTING NEWS VALIDATION ==========")
+    print("\n========================================")
+    print("       SILVER NEWS PIPELINE")
+    print("========================================")
 
-    # Required field checks.
-    has_article_id = (
-        col("article_id").isNotNull()
-        & (trim(col("article_id")) != "")
-    )
+    # --------------------------------------------------
+    # 2. FILE-LEVEL INCREMENTAL BRONZE READING
+    # --------------------------------------------------
 
-    has_url = (
-        col("url").isNotNull()
-        & (trim(col("url")) != "")
-    )
+    news_df, new_files = read_new_bronze(spark)
 
-    has_headline = (
-        col("headline").isNotNull()
-        & (trim(col("headline")) != "")
-    )
+    if news_df is None:
 
-    has_full_text = (
-        col("full_text").isNotNull()
-        & (trim(col("full_text")) != "")
-    )
+        print("\nNo records available for processing.")
 
-    has_content = has_headline | has_full_text
+    else:
 
-    # Generate validation reasons.
-    validation_reason = concat_ws(
-        "; ",
-        when(
-            col("json_parse_failed") == True,
-            lit("invalid_json")
-        ),
-        when(
-            ~has_article_id,
-            lit("missing_article_id")
-        ),
-        when(
-            ~has_url,
-            lit("missing_url")
-        ),
-        when(
-            ~has_content,
-            lit("missing_headline_and_full_text")
+        # --------------------------------------------------
+        # 3. ARTICLE-LEVEL DEDUPLICATION
+        # --------------------------------------------------
+
+        unique_news_df, missing_id_df = deduplicate_news(news_df)
+
+        # Keep missing-ID records for validation.
+        # They must not be discarded before DLQ handling.
+        candidates_df = unique_news_df.unionByName(
+            missing_id_df,
+            allowMissingColumns=True
         )
-    )
 
-    validated_df = (
-        candidates_df
-        .withColumn(
-            "validation_reason",
-            validation_reason
-        )
-        .withColumn(
+        print("\n========== CANDIDATE RECORDS ==========")
+
+        candidates_df.show(truncate=False)
+
+        # --------------------------------------------------
+        # 4. VALIDATION
+        # --------------------------------------------------
+
+        valid_df, invalid_df = validate_news(candidates_df)
+
+        # --------------------------------------------------
+        # 5. DISPLAY VALID RECORDS
+        # --------------------------------------------------
+
+        print("\n========== VALID NEWS RECORDS ==========")
+
+        valid_df.show(truncate=False)
+
+        # --------------------------------------------------
+        # 6. DISPLAY DEAD-LETTER RECORDS
+        # --------------------------------------------------
+
+        print("\n========== DEAD-LETTER RECORDS ==========")
+
+        invalid_df.select(
+            "article_id",
+            "url",
             "validation_status",
-            when(
-                col("validation_reason") == "",
-                lit("VALID")
-            ).otherwise(lit("INVALID"))
-        )
-    )
+            "validation_reason",
+            "bronze_file",
+            "topic",
+            "partition",
+            "offset",
+            "raw_json"
+        ).show(truncate=False)
 
-    # Separate valid and invalid records.
-    valid_df = validated_df.filter(
-        col("validation_status") == "VALID"
-    )
+        # --------------------------------------------------
+        # 7. PIPELINE SUMMARY
+        # --------------------------------------------------
 
-    invalid_df = (
-        validated_df
-        .filter(col("validation_status") == "INVALID")
-        .withColumn(
-            "rejected_at",
-            lit(None).cast("string")
-        )
-    )
+        print("\n========== PIPELINE SUMMARY ==========")
 
-    # Summary.
-    total_count = validated_df.count()
-    valid_count = valid_df.count()
-    invalid_count = invalid_df.count()
+        print("New Bronze files discovered:", len(new_files))
+        print("New unique articles:", unique_news_df.count())
+        print("Records with missing article IDs:", missing_id_df.count())
+        print("Valid records:", valid_df.count())
+        print("Invalid records:", invalid_df.count())
 
-    print("\n========== VALIDATION SUMMARY ==========")
+        print("\nBRONZE READING, DEDUPLICATION AND VALIDATION COMPLETED!")
 
-    print("Total candidate records:", total_count)
-    print("Valid records:", valid_count)
-    print("Invalid records:", invalid_count)
+        # IMPORTANT:
+        # Checkpoint updates and final Parquet writes will be added
+        # after the complete Silver processing stages are integrated.
+        # Do not mark files or article IDs as processed yet.
 
-    print("\nValidation completed!")
+finally:
 
-    return valid_df, invalid_df
+    spark.stop()
+
+    print("\nSPARK SESSION STOPPED")
