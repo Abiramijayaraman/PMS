@@ -1,91 +1,112 @@
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> python .\silver_news\tests\test_sentiment_analysis.py
 
-WARNING: Using incubator modules: jdk.incubator.vector
-26/11/11 23:38:24 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
-Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
-Setting default log level to "WARN".
-To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
-C:\Users\2000209448\Desktop\financial-news-pipeline\venv\Lib\site-packages\pyspark\testing\utils.py:127: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
-  require_minimum_pandas_version()
-26/11/11 23:38:25 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+import shutil
+from pathlib import Path
 
-========== CREATING SAMPLE NEWS ==========
-Sample articles: 2
-Article-ticker mappings: 3
-
-========== RUNNING FINBERT ==========
-
-========== STARTING FINBERT SENTIMENT ANALYSIS ==========
-Total unique articles: 2                                                        
-
-========== LOADING FINBERT ==========
-Using device: cpu
-Tokenizer loaded successfully.
-Loading weights: 100%|██████████████████████████████████████████████████████████| 201/201 [00:00<00:00, 834.43it/s]
-FinBERT model loaded successfully!
-
-Model sentiment labels:
-{'positive': 0, 'negative': 1, 'neutral': 2}
-
-Starting FinBERT inference...
-Processed 2/2 articles
-                                                                                
-========== ARTICLE-LEVEL SENTIMENT ==========
-+----------+------------------------------------------+---------------+---------+--------------------+--------------------+--------------------+-------------------+
-|article_id|cleaned_headline                          |matched_tickers|sentiment|positive_score      |negative_score      |neutral_score       |sentiment_score    |
-+----------+------------------------------------------+---------------+---------+--------------------+--------------------+--------------------+-------------------+
-|TEST-001  |Company reports strong quarterly profit   |[RELIANCE]     |positive |0.9565476179122925  |0.015003902837634087|0.028448505327105522|0.9415437150746584 |
-|TEST-002  |Company faces significant financial losses|[TCS, INFY]    |negative |0.008969593793153763|0.9687568545341492  |0.022273560985922813|-0.9597872607409954|
-+----------+------------------------------------------+---------------+---------+--------------------+--------------------+--------------------+-------------------+
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 
-========== TICKER-LEVEL SENTIMENT ==========
-+----------+--------+---------+-------------------+                             
-|article_id|ticker  |sentiment|sentiment_score    |
-+----------+--------+---------+-------------------+
-|TEST-001  |RELIANCE|positive |0.9415437150746584 |
-|TEST-002  |TCS     |negative |-0.9597872607409954|
-|TEST-002  |INFY    |negative |-0.9597872607409954|
-+----------+--------+---------+-------------------+
+# --------------------------------------------------
+# 1. PROJECT PATHS
+# --------------------------------------------------
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+SILVER_PATH = (
+    PROJECT_ROOT
+    / "silver_news"
+    / "data"
+    / "silver"
+)
+
+NEWS_OUTPUT_PATH = SILVER_PATH / "news"
+
+NEWS_BY_TICKER_OUTPUT_PATH = (
+    SILVER_PATH / "news_by_ticker"
+)
 
 
-========================================
-FINBERT SENTIMENT ANALYSIS COMPLETED
-========================================
-Articles processed: 2
-Article-ticker records: 3
+# --------------------------------------------------
+# 2. SAVE DATAFRAME AS PARQUET
+# --------------------------------------------------
 
-Sentiment analysis completed successfully.
+def save_dataframe_as_parquet(dataframe, output_path):
 
-========== ARTICLE SENTIMENT ==========
-+----------+---------+--------------------+--------------------+--------------------+-------------------+
-|article_id|sentiment|positive_score      |negative_score      |neutral_score       |sentiment_score    |
-+----------+---------+--------------------+--------------------+--------------------+-------------------+
-|TEST-001  |positive |0.9565476179122925  |0.015003902837634087|0.028448505327105522|0.9415437150746584 |
-|TEST-002  |negative |0.008969593793153763|0.9687568545341492  |0.022273560985922813|-0.9597872607409954|
-+----------+---------+--------------------+--------------------+--------------------+-------------------+
+    print(f"\nWriting output: {output_path}")
+
+    # Convert Spark DataFrame into Python records.
+    records = [
+        row.asDict(recursive=True)
+        for row in dataframe.collect()
+    ]
+
+    if not records:
+        print("No records available. Creating empty output is skipped.")
+        return 0
+
+    # Convert records into an Arrow table.
+    table = pa.Table.from_pylist(records)
+
+    # Create output folder.
+    output_path.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    # Write Parquet file.
+    parquet_file = output_path / "part-00000.parquet"
+
+    pq.write_table(
+        table,
+        parquet_file,
+        compression="snappy"
+    )
+
+    print("Saved successfully:", parquet_file)
+    print("Records written:", len(records))
+
+    return len(records)
 
 
-========== TICKER SENTIMENT ==========
-+----------+--------+---------+-------------------+                             
-|article_id|ticker  |sentiment|sentiment_score    |
-+----------+--------+---------+-------------------+
-|TEST-001  |RELIANCE|positive |0.9415437150746584 |
-|TEST-002  |TCS     |negative |-0.9597872607409954|
-|TEST-002  |INFY    |negative |-0.9597872607409954|
-+----------+--------+---------+-------------------+
+# --------------------------------------------------
+# 3. WRITE FINAL SILVER OUTPUTS
+# --------------------------------------------------
 
-                                                                                
-========== TEST SUMMARY ==========
-Articles processed: 2
-Ticker mappings processed: 3
-Missing sentiment: 0
-Missing sentiment scores: 0
+def write_silver_outputs(
+    news_with_sentiment_df,
+    news_by_ticker_with_sentiment_df
+):
 
-FINBERT TEST PASSED!
+    print("\n========== WRITING FINAL SILVER OUTPUTS ==========")
 
-SPARK SESSION STOPPED.
-SUCCESS: The process with PID 5636 (child process of PID 26616) has been terminated.
-SUCCESS: The process with PID 26616 (child process of PID 26012) has been terminated.
-SUCCESS: The process with PID 26012 (child process of PID 20404) has been terminated.
-(venv) PS C:\Users\2000209448\Desktop\financial-news-pipeline> 
+    # Save article-level Silver data.
+    news_count = save_dataframe_as_parquet(
+        news_with_sentiment_df,
+        NEWS_OUTPUT_PATH
+    )
+
+    # Save article-ticker-level Silver data.
+    ticker_count = save_dataframe_as_parquet(
+        news_by_ticker_with_sentiment_df,
+        NEWS_BY_TICKER_OUTPUT_PATH
+    )
+
+    # --------------------------------------------------
+    # 4. FINAL SUMMARY
+    # --------------------------------------------------
+
+    print("\n========================================")
+    print("SILVER OUTPUT GENERATION COMPLETED")
+    print("========================================")
+
+    print("Unique articles written:", news_count)
+
+    print("Article-ticker records written:", ticker_count)
+
+    print("\nFinal output locations:")
+
+    print("1.", NEWS_OUTPUT_PATH)
+
+    print("2.", NEWS_BY_TICKER_OUTPUT_PATH)
+
+    return news_count, ticker_count
