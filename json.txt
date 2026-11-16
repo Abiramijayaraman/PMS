@@ -1,12 +1,25 @@
-(.venv) PS C:\Users\2000209448\Documents\fintel> python -m pip check
-No broken requirements found.
-(.venv) PS C:\Users\2000209448\Documents\fintel> where.exe java
-C:\Program Files\OpenLogic\jdk-17.0.20.8-hotspot\bin\java.exe
-(.venv) PS C:\Users\2000209448\Documents\fintel> Get-Command java | Select-Object Source
-
-Source                                                       
-------                                                       
-C:\Program Files\OpenLogic\jdk-17.0.20.8-hotspot\bin\java.exe
-
-
+venv) PS C:\Users\2000209448\Documents\fintel> $javaHome = "C:\Program Files\OpenLogic\jdk-17.0.20.8-hotspot"
+>>  
+>> $env:JAVA_HOME = $javaHome
+>>  
+>> $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
+(.venv) PS C:\Users\2000209448\Documents\fintel> [Environment]::SetEnvironmentVariable(
+>>     "JAVA_HOME",
+>>     $javaHome,
+>>     "User"
+>> )
+(.venv) PS C:\Users\2000209448\Documents\fintel> echo $env:JAVA_HOME
+>> java -version
+C:\Program Files\OpenLogic\jdk-17.0.20.8-hotspot
+openjdk version "17.0.20" 2026-07-21
+OpenJDK Runtime Environment OpenLogic-OpenJDK (build 17.0.20+8-adhoc..jdk17u)
+OpenJDK 64-Bit Server VM OpenLogic-OpenJDK (build 17.0.20+8-adhoc..jdk17u, mixed mode, sharing)
+(.venv) PS C:\Users\2000209448\Documents\fintel> Test-Path "C:\hadoop\bin\winutils.exe"
+>> Test-Path "C:\kafka_2.13-4.4.0"
+>> Test-Path ".\models\finbert\config.json"
+False
+True
+False
+(.venv) PS C:\Users\2000209448\Documents\fintel> echo $env:JAVA_HOME
+C:\Program Files\OpenLogic\jdk-17.0.20.8-hotspot
 (.venv) PS C:\Users\2000209448\Documents\fintel> 
