@@ -1,2 +1,37 @@
-python -c "import pyspark, delta, pandas, torch, transformers, streamlit, pyarrow, deltalake, kafka; print('ALL IMPORTS SUCCESSFUL')"
-python -c "import pyspark, torch, transformers, pandas; print('PySpark:', pyspark.__version__); print('Torch:', torch.__version__); print('Transformers:', transformers.__version__); print('Pandas:', pandas.__version__)"
+(.venv) PS C:\Users\2000209448\Documents\fintel> python -m pip install --upgrade kafka-python
+Requirement already satisfied: kafka-python in .\.venv\Lib\site-packages (2.0.2)
+Collecting kafka-python
+  Downloading kafka_python-3.0.13-py3-none-any.whl.metadata (11 kB)
+Downloading kafka_python-3.0.13-py3-none-any.whl (614 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 614.3/614.3 kB 2.2 MB/s  0:00:00
+Installing collected packages: kafka-python
+  Attempting uninstall: kafka-python
+    Found existing installation: kafka-python 2.0.2
+    Uninstalling kafka-python-2.0.2:
+      Successfully uninstalled kafka-python-2.0.2
+Successfully installed kafka-python-3.0.13
+(.venv) PS C:\Users\2000209448\Documents\fintel> pip -m pip show kafka-python
+
+Usage:   
+  pip <command> [options]
+
+no such option: -m
+(.venv) PS C:\Users\2000209448\Documents\fintel> python -m pip show kafka-python
+Name: kafka-python
+Version: 3.0.13
+Summary: Pure Python client for Apache Kafka
+Home-page: https://github.com/dpkp/kafka-python
+Author: 
+Author-email: Dana Powers <dana.powers@gmail.com>
+License-Expression: Apache-2.0
+Location: C:\Users\2000209448\Documents\fintel\.venv\Lib\site-packages
+Requires: 
+Required-by: 
+(.venv) PS C:\Users\2000209448\Documents\fintel> python -c "import pyspark, delta, pandas, torch, transformers, streamlit, pyarrow, deltalake, kafka; print('ALL IMPORTS SUCCESSFUL')"
+ALL IMPORTS SUCCESSFUL
+(.venv) PS C:\Users\2000209448\Documents\fintel> python -c "import pyspark, torch, transformers, pandas; print('PySpark:', pyspark.__version__); print('Torch:', torch.__version__); print('Transformers:', transformers.__version__); print('Pandas:', pandas.__version__)"
+PySpark: 4.1.1
+Torch: 2.15.0+cpu
+Transformers: 5.23.0
+Pandas: 2.3.3
+(.venv) PS C:\Users\2000209448\Documents\fintel> 
