@@ -1,25 +1,688 @@
-venv) PS C:\Users\2000209448\Documents\fintel> $javaHome = "C:\Program Files\OpenLogic\jdk-17.0.20.8-hotspot"
->>  
->> $env:JAVA_HOME = $javaHome
->>  
->> $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
-(.venv) PS C:\Users\2000209448\Documents\fintel> [Environment]::SetEnvironmentVariable(
->>     "JAVA_HOME",
->>     $javaHome,
->>     "User"
->> )
-(.venv) PS C:\Users\2000209448\Documents\fintel> echo $env:JAVA_HOME
->> java -version
-C:\Program Files\OpenLogic\jdk-17.0.20.8-hotspot
-openjdk version "17.0.20" 2026-07-21
-OpenJDK Runtime Environment OpenLogic-OpenJDK (build 17.0.20+8-adhoc..jdk17u)
-OpenJDK 64-Bit Server VM OpenLogic-OpenJDK (build 17.0.20+8-adhoc..jdk17u, mixed mode, sharing)
-(.venv) PS C:\Users\2000209448\Documents\fintel> Test-Path "C:\hadoop\bin\winutils.exe"
->> Test-Path "C:\kafka_2.13-4.4.0"
->> Test-Path ".\models\finbert\config.json"
-False
-True
-False
-(.venv) PS C:\Users\2000209448\Documents\fintel> echo $env:JAVA_HOME
-C:\Program Files\OpenLogic\jdk-17.0.20.8-hotspot
-(.venv) PS C:\Users\2000209448\Documents\fintel> 
+
+from pathlib import Path
+from datetime import datetime, timezone, timedelta
+
+import pyarrow.parquet as pq
+
+from sentence_transformers import SentenceTransformer, util
+
+from pyspark.sql import Window
+from pyspark.sql.functions import (
+    col,
+    trim,
+    row_number
+)
+
+from pyspark.sql.types import (
+    StructType,
+    StructField,
+    StringType,
+    DoubleType
+)
+
+from checkpoint_manager import load_processed_article_ids
+
+
+# ==================================================
+# 1. PROJECT PATHS AND CONFIGURATION
+# ==================================================
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+SILVER_NEWS_PATH = (
+    PROJECT_ROOT
+    / "silver_news"
+    / "data"
+    / "silver"
+    / "news"
+)
+
+EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+
+SIMILARITY_THRESHOLD = 0.90
+
+TIME_WINDOW_HOURS = 24
+
+# Model is loaded only once and reused.
+embedding_model = None
+
+
+# ==================================================
+# 2. LOAD EMBEDDING MODEL
+# ==================================================
+
+def load_embedding_model():
+
+    global embedding_model
+
+    if embedding_model is None:
+
+        print("\nLoading semantic embedding model...")
+
+        embedding_model = SentenceTransformer(
+            EMBEDDING_MODEL_NAME
+        )
+
+        print("Embedding model loaded successfully.")
+
+    return embedding_model
+
+
+# ==================================================
+# 3. ARTICLE-LEVEL DEDUPLICATION
+# ==================================================
+
+def deduplicate_news(news_df):
+
+    print("\n========== ARTICLE-LEVEL DEDUPLICATION ==========")
+
+    processed_ids = load_processed_article_ids()
+
+    print(
+        "Previously processed article IDs:",
+        len(processed_ids)
+    )
+
+    # Separate records with missing article IDs.
+
+    missing_id_df = news_df.filter(
+        col("article_id").isNull()
+        | (trim(col("article_id")) == "")
+    )
+
+    # Keep records with article IDs.
+
+    identified_df = news_df.filter(
+        col("article_id").isNotNull()
+        & (trim(col("article_id")) != "")
+    )
+
+    # Remove previously processed articles.
+
+    if processed_ids:
+
+        identified_df = identified_df.filter(
+            ~col("article_id").isin(list(processed_ids))
+        )
+
+    # Remove duplicates within the current batch.
+
+    window_spec = (
+        Window
+        .partitionBy("article_id")
+        .orderBy(
+            col("ingested_at").desc_nulls_last(),
+            col("url").asc_nulls_last(),
+            col("headline").asc_nulls_last()
+        )
+    )
+
+    ranked_df = identified_df.withColumn(
+        "row_number",
+        row_number().over(window_spec)
+    )
+
+    unique_new_df = (
+        ranked_df
+        .filter(col("row_number") == 1)
+        .drop("row_number")
+    )
+
+    # Summary.
+
+    incoming_count = news_df.count()
+    missing_count = missing_id_df.count()
+    unique_count = unique_new_df.count()
+
+    print("\n========== DEDUPLICATION SUMMARY ==========")
+
+    print("Incoming records:", incoming_count)
+    print("Previously processed IDs:", len(processed_ids))
+    print("Records with missing article IDs:", missing_count)
+    print("New unique articles:", unique_count)
+
+    print("\nArticle-level deduplication completed!")
+
+    return unique_new_df, missing_id_df
+
+
+# ==================================================
+# 4. NORMALIZE TIMESTAMP
+# ==================================================
+
+def normalize_timestamp(value):
+
+    if value is None:
+        return None
+
+    if isinstance(value, str):
+
+        try:
+
+            value = datetime.fromisoformat(
+                value.replace("Z", "+00:00")
+            )
+
+        except ValueError:
+
+            return None
+
+    if not isinstance(value, datetime):
+        return None
+
+    if value.tzinfo is None:
+
+        value = value.replace(
+            tzinfo=timezone.utc
+        )
+
+    return value.astimezone(timezone.utc)
+
+
+# ==================================================
+# 5. GET ARTICLE TEXT
+# ==================================================
+
+def get_article_text(article):
+
+    headline = (
+        article.get("cleaned_headline")
+        or article.get("headline")
+        or ""
+    )
+
+    return str(headline).strip()
+
+
+# ==================================================
+# 6. GET ARTICLE TICKERS
+# ==================================================
+
+def get_article_tickers(article):
+
+    tickers = article.get("matched_tickers")
+
+    if not tickers:
+        return set()
+
+    return {
+        str(ticker).strip().upper()
+        for ticker in tickers
+        if ticker
+    }
+
+
+# ==================================================
+# 7. READ PREVIOUSLY COMMITTED SILVER NEWS
+# ==================================================
+
+def load_historical_news():
+
+    print("\nLoading historical Silver News...")
+
+    historical_articles = []
+
+    if not SILVER_NEWS_PATH.exists():
+
+        print("Silver News directory does not exist yet.")
+
+        return historical_articles
+
+    parquet_files = list(
+        SILVER_NEWS_PATH.rglob("*.parquet")
+    )
+
+    if not parquet_files:
+
+        print("No historical Silver News found.")
+
+        return historical_articles
+
+    for parquet_file in parquet_files:
+
+        print(
+            "Reading historical file:",
+            parquet_file.name
+        )
+
+        try:
+
+            table = pq.read_table(parquet_file)
+
+            records = table.to_pylist()
+
+            historical_articles.extend(records)
+
+        except Exception as error:
+
+            raise RuntimeError(
+                f"Could not read historical Silver file "
+                f"{parquet_file}: {error}"
+            ) from error
+
+    print(
+        "Historical articles loaded:",
+        len(historical_articles)
+    )
+
+    return historical_articles
+
+
+# ==================================================
+# 8. CHECK TICKER AND TIME WINDOW
+# ==================================================
+
+def is_candidate_article(
+    incoming_article,
+    historical_article
+):
+
+    incoming_tickers = get_article_tickers(
+        incoming_article
+    )
+
+    historical_tickers = get_article_tickers(
+        historical_article
+    )
+
+    # Both articles must have at least one common ticker.
+
+    if not incoming_tickers.intersection(
+        historical_tickers
+    ):
+
+        return False
+
+    incoming_time = normalize_timestamp(
+        incoming_article.get("ingested_at")
+    )
+
+    historical_time = normalize_timestamp(
+        historical_article.get("ingested_at")
+    )
+
+    # Do not discard records when timestamps are missing.
+    # They cannot be safely compared using the time rule.
+
+    if incoming_time is None or historical_time is None:
+
+        return False
+
+    time_difference = abs(
+        incoming_time - historical_time
+    )
+
+    allowed_window = timedelta(
+        hours=TIME_WINDOW_HOURS
+    )
+
+    return time_difference <= allowed_window
+
+
+# ==================================================
+# 9. GENERATE EMBEDDING
+# ==================================================
+
+def generate_embedding(text):
+
+    model = load_embedding_model()
+
+    embedding = model.encode(
+        text,
+        convert_to_tensor=True,
+        normalize_embeddings=True
+    )
+
+    return embedding
+
+
+# ==================================================
+# 10. CALCULATE COSINE SIMILARITY
+# ==================================================
+
+def calculate_similarity(
+    incoming_text,
+    historical_text
+):
+
+    incoming_embedding = generate_embedding(
+        incoming_text
+    )
+
+    historical_embedding = generate_embedding(
+        historical_text
+    )
+
+    similarity = util.cos_sim(
+        incoming_embedding,
+        historical_embedding
+    )
+
+    return float(
+        similarity.item()
+    )
+
+
+# ==================================================
+# 11. SEMANTIC DEDUPLICATION
+# ==================================================
+
+def semantic_deduplicate_news(
+    news_with_tickers_df
+):
+
+    print("\n========== SEMANTIC DEDUPLICATION ==========")
+
+    incoming_articles = [
+        row.asDict(recursive=True)
+        for row in news_with_tickers_df.collect()
+    ]
+
+    if not incoming_articles:
+
+        print("No incoming articles for semantic comparison.")
+
+        empty_duplicate_schema = StructType([
+            StructField("duplicate_article_id", StringType(), True),
+            StructField("canonical_article_id", StringType(), True),
+            StructField("duplicate_source", StringType(), True),
+            StructField("canonical_source", StringType(), True),
+            StructField("duplicate_headline", StringType(), True),
+            StructField("canonical_headline", StringType(), True),
+            StructField("matched_tickers", StringType(), True),
+            StructField("similarity_score", DoubleType(), True)
+        ])
+
+        duplicate_df = news_with_tickers_df.sparkSession.createDataFrame(
+            [],
+            empty_duplicate_schema
+        )
+
+        return news_with_tickers_df, duplicate_df
+
+    # --------------------------------------------------
+    # LOAD HISTORICAL ARTICLES
+    # --------------------------------------------------
+
+    historical_articles = load_historical_news()
+
+    # --------------------------------------------------
+    # PREPARE CANDIDATES
+    # --------------------------------------------------
+
+    print("\nPreparing semantic comparison candidates...")
+
+    # Process articles in ingestion-time order.
+    incoming_articles.sort(
+        key=lambda article: (
+            normalize_timestamp(article.get("ingested_at"))
+            or datetime.min.replace(tzinfo=timezone.utc)
+        )
+    )
+
+    # Only unique accepted articles become comparison
+    # candidates for later articles in this batch.
+
+    accepted_articles = []
+
+    # Previously committed articles are comparison candidates.
+    comparison_articles = list(historical_articles)
+
+    duplicate_records = []
+
+    duplicate_ids = set()
+
+    comparison_count = 0
+
+    # --------------------------------------------------
+    # COMPARE EACH INCOMING ARTICLE
+    # --------------------------------------------------
+
+    for incoming in incoming_articles:
+
+        article_id = incoming.get("article_id")
+
+        incoming_text = get_article_text(
+            incoming
+        )
+
+        incoming_tickers = get_article_tickers(
+            incoming
+        )
+
+        if not incoming_text:
+
+            print(
+                "Skipping semantic comparison because "
+                "headline is empty:",
+                article_id
+            )
+
+            accepted_articles.append(incoming)
+
+            comparison_articles.append(incoming)
+
+            continue
+
+        if not incoming_tickers:
+
+            print(
+                "No ticker found. Retaining article:",
+                article_id
+            )
+
+            accepted_articles.append(incoming)
+
+            comparison_articles.append(incoming)
+
+            continue
+
+        best_match = None
+
+        best_similarity = 0.0
+
+        # --------------------------------------------------
+        # FIND SAME-TICKER ARTICLES WITHIN 24 HOURS
+        # --------------------------------------------------
+
+        for candidate in comparison_articles:
+
+            if candidate.get("article_id") == article_id:
+                continue
+
+            if not is_candidate_article(
+                incoming,
+                candidate
+            ):
+                continue
+
+            candidate_text = get_article_text(
+                candidate
+            )
+
+            if not candidate_text:
+                continue
+
+            # --------------------------------------------------
+            # COSINE SIMILARITY
+            # --------------------------------------------------
+
+            similarity = calculate_similarity(
+                incoming_text,
+                candidate_text
+            )
+
+            comparison_count += 1
+
+            print(
+                f"Comparing {article_id} with "
+                f"{candidate.get('article_id')}: "
+                f"{similarity:.4f}"
+            )
+
+            if similarity > best_similarity:
+
+                best_similarity = similarity
+
+                best_match = candidate
+
+        # --------------------------------------------------
+        # IDENTIFY DUPLICATE
+        # --------------------------------------------------
+
+        if (
+            best_match is not None
+            and best_similarity >= SIMILARITY_THRESHOLD
+        ):
+
+            canonical_id = best_match.get(
+                "article_id"
+            )
+
+            print(
+                "\nSEMANTIC DUPLICATE DETECTED:",
+                article_id
+            )
+
+            print(
+                "Canonical article:",
+                canonical_id
+            )
+
+            print(
+                "Similarity:",
+                round(best_similarity, 4)
+            )
+
+            duplicate_ids.add(article_id)
+
+            duplicate_records.append({
+
+                "duplicate_article_id": article_id,
+
+                "canonical_article_id": canonical_id,
+
+                "duplicate_source": incoming.get("source"),
+
+                "canonical_source": best_match.get("source"),
+
+                "duplicate_headline": incoming_text,
+
+                "canonical_headline": get_article_text(
+                    best_match
+                ),
+
+                "matched_tickers": ", ".join(
+                    sorted(
+                        incoming_tickers.intersection(
+                            get_article_tickers(best_match)
+                        )
+                    )
+                ),
+
+                "similarity_score": best_similarity
+            })
+
+        else:
+
+            print(
+                "\nUNIQUE ARTICLE:",
+                article_id
+            )
+
+            accepted_articles.append(incoming)
+
+            comparison_articles.append(incoming)
+
+    # --------------------------------------------------
+    # CREATE UNIQUE SPARK DATAFRAME
+    # --------------------------------------------------
+
+    if duplicate_ids:
+
+        unique_df = news_with_tickers_df.filter(
+            ~col("article_id").isin(
+                list(duplicate_ids)
+            )
+        )
+
+    else:
+
+        unique_df = news_with_tickers_df
+
+    # --------------------------------------------------
+    # CREATE DUPLICATE AUDIT DATAFRAME
+    # --------------------------------------------------
+
+    duplicate_schema = StructType([
+
+        StructField("duplicate_article_id", StringType(), True),
+
+        StructField("canonical_article_id", StringType(), True),
+
+        StructField("duplicate_source", StringType(), True),
+
+        StructField("canonical_source", StringType(), True),
+
+        StructField("duplicate_headline", StringType(), True),
+
+        StructField("canonical_headline", StringType(), True),
+
+        StructField("matched_tickers", StringType(), True),
+
+        StructField("similarity_score", DoubleType(), True)
+
+    ])
+
+    duplicate_df = (
+        news_with_tickers_df.sparkSession.createDataFrame(
+            duplicate_records,
+            schema=duplicate_schema
+        )
+    )
+
+    # --------------------------------------------------
+    # SUMMARY
+    # --------------------------------------------------
+
+    print("\n========== SEMANTIC DEDUPLICATION SUMMARY ==========")
+
+    print(
+        "Incoming articles:",
+        len(incoming_articles)
+    )
+
+    print(
+        "Historical articles:",
+        len(historical_articles)
+    )
+
+    print(
+        "Semantic comparisons performed:",
+        comparison_count
+    )
+
+    print(
+        "Semantic duplicates:",
+        len(duplicate_records)
+    )
+
+    print(
+        "Unique incoming articles:",
+        len(incoming_articles) - len(duplicate_records)
+    )
+
+    print(
+        "Similarity threshold:",
+        SIMILARITY_THRESHOLD
+    )
+
+    print(
+        "Time window:",
+        TIME_WINDOW_HOURS,
+        "hours"
+    )
+
+    print("\nSemantic deduplication completed!")
+
+    return unique_df, duplicate_df
