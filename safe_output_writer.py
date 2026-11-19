@@ -92,7 +92,8 @@ def write_dataframe(dataframe, output_path):
 def create_commit_marker(
     batch_id,
     bronze_files,
-    processed_article_ids
+    processed_article_ids,
+    semantic_duplicate_count=None
 ):
 
     COMMITTED_BATCHES_PATH.mkdir(
@@ -220,7 +221,8 @@ def write_batch_outputs(
     invalid_df,
     semantic_duplicates_df,
     bronze_files,
-    processed_article_ids
+    processed_article_ids,
+    semantic_duplicate_count=None
 ):
 
     print("\n========== SAFE BATCH WRITING ==========")
@@ -256,12 +258,10 @@ def write_batch_outputs(
         AUDIT_PATH / f"batch_id={batch_id}"
     )
 
-    final_paths = [
-        final_news,
-        final_ticker,
-        final_dlq,
-        final_audit,
-    ]
+    write_audit = (semantic_duplicate_count or 0) > 0
+    final_paths = [final_news, final_ticker, final_dlq]
+    if write_audit:
+        final_paths.append(final_audit)
 
     # Remove incomplete staging data from earlier attempts.
     if staging_batch.exists():
@@ -325,15 +325,14 @@ def write_batch_outputs(
         )
 
         # ------------------------------------------
-        # D. WRITE SEMANTIC DUPLICATE AUDIT
+        # D. WRITE SEMANTIC DUPLICATE AUDIT ONLY WHEN NEEDED
         # ------------------------------------------
 
-        print("\nWriting semantic duplicate audit...")
-
-        write_dataframe(
-            semantic_duplicates_df,
-            staged_audit
-        )
+        if write_audit:
+            print("\nWriting semantic duplicate audit...")
+            write_dataframe(semantic_duplicates_df, staged_audit)
+        else:
+            print("\nNo semantic duplicates found; audit writing skipped.")
 
         # ------------------------------------------
         # E. MOVE STAGED OUTPUTS TO FINAL PATHS
@@ -354,10 +353,8 @@ def write_batch_outputs(
             exist_ok=True
         )
 
-        AUDIT_PATH.mkdir(
-            parents=True,
-            exist_ok=True
-        )
+        if write_audit:
+            AUDIT_PATH.mkdir(parents=True, exist_ok=True)
 
         staged_news.rename(final_news)
 
@@ -365,7 +362,8 @@ def write_batch_outputs(
 
         staged_dlq.rename(final_dlq)
 
-        staged_audit.rename(final_audit)
+        if write_audit:
+            staged_audit.rename(final_audit)
 
         # ------------------------------------------
         # F. CREATE COMMIT MARKER
@@ -393,7 +391,8 @@ def write_batch_outputs(
 
         print("DLQ output:", final_dlq)
 
-        print("Semantic duplicate audit:", final_audit)
+        if write_audit:
+            print("Semantic duplicate audit:", final_audit)
 
         return True
 

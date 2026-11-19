@@ -421,39 +421,8 @@ def analyse_sentiment(
             )
         )
 
-    # --------------------------------------------------
-    # 14. DISPLAY ARTICLE-LEVEL RESULTS
-    # --------------------------------------------------
-
-    print("\n========== ARTICLE-LEVEL SENTIMENT ==========")
-
-    article_sentiment_df.select(
-        "article_id",
-        "cleaned_headline",
-        "matched_tickers",
-        "sentiment",
-        "positive_score",
-        "negative_score",
-        "neutral_score",
-        "sentiment_score"
-    ).show(
-        truncate=False
-    )
-
-    # --------------------------------------------------
-    # 15. DISPLAY TICKER-LEVEL RESULTS
-    # --------------------------------------------------
-
-    print("\n========== TICKER-LEVEL SENTIMENT ==========")
-
-    ticker_sentiment_df.select(
-        "article_id",
-        "ticker",
-        "sentiment",
-        "sentiment_score"
-    ).show(
-        truncate=False
-    )
+    # Avoid Spark .show() actions here. They would execute two additional
+    # Spark jobs solely for terminal display; inference totals are printed below.
 
     # --------------------------------------------------
     # 16. FINAL SUMMARY

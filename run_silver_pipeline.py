@@ -1,275 +1,307 @@
-(.venv) PS C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\src> python run_silver_pipeline.py    
-                         
-================================================
-       STARTING SILVER NEWS PIPELINE SERVICE                 
-================================================
-Bronze folder: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\news_bronze\shared_data\bronze\new_news_update
-Mode: CONTINUOUS
-WARNING: Using incubator modules: jdk.incubator.vector                 
-26/11/19 14:42:41 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
-Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
-Setting default log level to "WARN".
-To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
-26/11/19 14:42:43 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+import hashlib
+import os
+import sys
+import time
+from pathlib import Path
+from datetime import datetime, timezone
 
-========== SERVICE MODEL INITIALIZATION ==========
+# Windows PySpark must use the active virtual-environment interpreter.
+os.environ["PYSPARK_PYTHON"] = sys.executable
+os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
 
-Loading local semantic embedding model...
-Loading weights: 100%|█████████████████████████████████████████████████████████| 103/103 [00:00<00:00, 1392.81it/s]
-Embedding model loaded successfully.
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, trim, lit
 
-========== LOADING FINBERT ==========
-Using device: cpu
-Tokenizer loaded successfully.
-Loading weights: 100%|██████████████████████████████████████████████████████████| 201/201 [00:00<00:00, 323.73it/s]
-FinBERT model loaded successfully!
+from read_bronze import read_new_bronze, BRONZE_PATH
+from deduplicate_news import (
+    deduplicate_news,
+    semantic_deduplicate_news,
+    load_embedding_model,
+    register_committed_articles,
+)
+from validate_news import validate_news
+from clean_news import clean_news
+from extract_tickers import extract_tickers
+from sentiment_analysis import analyse_sentiment, load_finbert
+from checkpoint_manager import (
+    load_processed_files,
+    save_processed_files,
+    load_processed_article_ids,
+    save_processed_article_ids,
+)
+from safe_output_writer import (
+    write_batch_outputs,
+    create_commit_marker,
+    recover_checkpoints,
+)
 
-Model sentiment labels:
-{'positive': 0, 'negative': 1, 'neutral': 2}
-Model initialization completed in 2.07 seconds
-
-========== CHECKPOINT RECOVERY ==========
-Committed batches recovered: 6
-Processed Bronze files: 20
-Processed article IDs: 47
-Checkpoint recovery completed.
-
-Service is running. Monitoring Bronze for new Parquet files.
-Press Ctrl+C to stop the service gracefully.
-
-
-Detected 1 new Bronze file(s). Checking file stability...
+POLL_INTERVAL_SECONDS = 5
+FILE_STABILITY_CHECKS = 2
 
 
-================================================
-          STARTING SILVER NEWS BATCH
-================================================
-
-========== STEP 1: CHECKPOINT RECOVERY ==========
-
-========== CHECKPOINT RECOVERY ==========
-Committed batches recovered: 6
-Processed Bronze files: 20
-Processed article IDs: 47
-Checkpoint recovery completed.
-
-========== STEP 2: READ BRONZE ==========
-
-========== INCREMENTAL FILE CHECK ==========
-Total Bronze files: 4
-Previously processed files: 20
-New files to process: 1
-NEW: news_20261119T065518393195Z_2af22eaa.parquet
-SKIPPED: news_20261118T062018498715Z_0678ba20.parquet
-SKIPPED: news_20261118T062018665286Z_11170060.parquet
-SKIPPED: news_20261119T065518299142Z_85c25b66.parquet
-
-Reading: news_20261119T065518393195Z_2af22eaa.parquet
-Records in file: 2
-                                                                                
-Total new Bronze records: 2
-New Bronze files: 1
- - news_20261119T065518393195Z_2af22eaa.parquet
-
-Batch ID: batch_4633011e44fac97b
-
-========== STEP 3: EXACT DEDUPLICATION ==========
-
-========== ARTICLE-LEVEL DEDUPLICATION ==========
-Previously processed article IDs: 47
-                                                                                
-========== DEDUPLICATION SUMMARY ==========
-Incoming records: 2
-Previously processed IDs: 47
-Records with missing article IDs: 0
-New unique articles: 2
-
-Article-level deduplication completed!
-Records proceeding to validation: 2                                             
-                                                                                
-========== STEP 4: VALIDATION ==========
-
-========== STARTING NEWS VALIDATION ==========
-                                                                                
-========== VALIDATION SUMMARY ==========
-Total candidate records: 2
-Valid records: 2
-Invalid records: 0
-
-Validation completed!
-Valid articles: 2                                                               
-Invalid articles: 0
-
-========== STEP 5: HTML CLEANING ==========
-
-========== STARTING HTML CLEANING ==========
-HTML cleaning completed.
-
-========== STEP 6: TICKER EXTRACTION ==========
-
-========== STARTING TICKER EXTRACTION ==========
-Number of companies loaded: 13
-                                                                                
-========== TICKER EXTRACTION RESULTS ==========
-Total articles: 2
-Articles with tickers: 2
-Articles without tickers: 0
-Total article-ticker mappings: 2                                                
-
-ARTICLE-LEVEL TICKER RESULTS:
-+----------------------------------------------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------+
-|article_id                                                      |cleaned_headline                                                                                                                                                        |matched_tickers|
-+----------------------------------------------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------+
-|04416cd594c941718009f41fab2b69ab2b215f0647a2ba22cff8c80da8310639|ICICI Bank Hits a 52-Week High: Can Growth Drivers Sustain the Rally? - TradingView                                                                                     |[ICICIBANK]    |
-|2a922252f8120bf5931c3d38d54ed2e95370d84866c3e9598faa2088b9056c30|Cyril Amarchand Mangaldas advises Bajaj Finance Ltd. as its legal counsel as to Indian law on its INR 11700 crore QIP and INR 5800 crore preferential issue - SCC Online|[BAJFINANCE]   |
-+----------------------------------------------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------+
+def generate_batch_id(bronze_files):
+    filenames = sorted(Path(file).name for file in bronze_files)
+    file_string = "|".join(filenames)
+    batch_hash = hashlib.sha256(file_string.encode("utf-8")).hexdigest()[:16]
+    return f"batch_{batch_hash}"
 
 
-NEWS BY TICKER RESULTS:
-+----------------------------------------------------------------+----------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-|article_id                                                      |ticker    |cleaned_headline                                                                                                                                                        |
-+----------------------------------------------------------------+----------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-|04416cd594c941718009f41fab2b69ab2b215f0647a2ba22cff8c80da8310639|ICICIBANK |ICICI Bank Hits a 52-Week High: Can Growth Drivers Sustain the Rally? - TradingView                                                                                     |
-|2a922252f8120bf5931c3d38d54ed2e95370d84866c3e9598faa2088b9056c30|BAJFINANCE|Cyril Amarchand Mangaldas advises Bajaj Finance Ltd. as its legal counsel as to Indian law on its INR 11700 crore QIP and INR 5800 crore preferential issue - SCC Online|
-+----------------------------------------------------------------+----------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+def get_article_ids(news_df):
+    if news_df is None:
+        return set()
+    rows = (
+        news_df.select("article_id")
+        .where(col("article_id").isNotNull() & (trim(col("article_id")) != ""))
+        .distinct()
+        .collect()
+    )
+    return {row["article_id"] for row in rows}
 
 
-TICKER EXTRACTION COMPLETED!
-
-========== STEP 7: SEMANTIC DEDUPLICATION ==========
-
-========== SEMANTIC DEDUPLICATION ==========
-                                                                                
-Loading historical Silver News...
-Reading historical file: part-00000.parquet
-Reading historical file: part-00000.parquet
-Reading historical file: part-00000.parquet
-Reading historical file: part-00000.parquet
-Reading historical file: part-00000.parquet
-Reading historical file: part-00000.parquet
-Historical articles loaded: 46
-
-Preparing semantic comparison candidates...
-
-UNIQUE ARTICLE: 04416cd594c941718009f41fab2b69ab2b215f0647a2ba22cff8c80da8310639
-
-UNIQUE ARTICLE: 2a922252f8120bf5931c3d38d54ed2e95370d84866c3e9598faa2088b9056c30
-
-========== SEMANTIC DEDUPLICATION SUMMARY ==========
-Incoming articles: 2
-Historical articles: 46
-Semantic comparisons performed: 0
-Semantic duplicates: 0
-Unique incoming articles: 2
-Similarity threshold: 0.9
-Time window: 24 hours
-
-Semantic deduplication completed!
-Articles after semantic deduplication: 2                                        
-Semantic duplicates detected: 0
-Unique article-ticker mappings: 2                                               
-
-========== STEP 8: FINBERT SENTIMENT ==========
-
-========== STARTING FINBERT SENTIMENT ANALYSIS ==========
-Total unique articles: 2                                                        
-FinBERT already loaded; reusing the in-memory model.
-
-Starting FinBERT inference...
-Processed 2/2 articles
-                                                                                
-========== ARTICLE-LEVEL SENTIMENT ==========
-+----------------------------------------------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------+---------+------------------+--------------------+------------------+------------------+
-|article_id                                                      |cleaned_headline                                                                                                                                                        |matched_tickers|sentiment|positive_score    |negative_score      |neutral_score     |sentiment_score   |
-+----------------------------------------------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------+---------+------------------+--------------------+------------------+------------------+
-|04416cd594c941718009f41fab2b69ab2b215f0647a2ba22cff8c80da8310639|ICICI Bank Hits a 52-Week High: Can Growth Drivers Sustain the Rally? - TradingView                                                                                     |[ICICIBANK]    |positive |0.5798910856246948|0.0171740110963583  |0.4029349088668823|0.5627170745283365|
-|2a922252f8120bf5931c3d38d54ed2e95370d84866c3e9598faa2088b9056c30|Cyril Amarchand Mangaldas advises Bajaj Finance Ltd. as its legal counsel as to Indian law on its INR 11700 crore QIP and INR 5800 crore preferential issue - SCC Online|[BAJFINANCE]   |neutral  |0.0377463772892952|0.021727070212364197|0.94052654504776  |0.016019307076931 |
-+----------------------------------------------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------+---------+------------------+--------------------+------------------+------------------+
+def add_empty_sentiment_columns(dataframe):
+    sentiment_columns = {
+        "sentiment": "string",
+        "positive_score": "double",
+        "negative_score": "double",
+        "neutral_score": "double",
+        "sentiment_score": "double",
+    }
+    for column_name, data_type in sentiment_columns.items():
+        if column_name not in dataframe.columns:
+            dataframe = dataframe.withColumn(column_name, lit(None).cast(data_type))
+    return dataframe
 
 
-========== TICKER-LEVEL SENTIMENT ==========
-+----------------------------------------------------------------+----------+---------+------------------+
-|article_id                                                      |ticker    |sentiment|sentiment_score   |
-+----------------------------------------------------------------+----------+---------+------------------+
-|04416cd594c941718009f41fab2b69ab2b215f0647a2ba22cff8c80da8310639|ICICIBANK |positive |0.5627170745283365|
-|2a922252f8120bf5931c3d38d54ed2e95370d84866c3e9598faa2088b9056c30|BAJFINANCE|neutral  |0.016019307076931 |
-+----------------------------------------------------------------+----------+---------+------------------+
+class StageTimer:
+    """Collect per-stage wall-clock durations for terminal reporting only."""
+    def __init__(self):
+        self.durations = []
+        self.started_at = time.perf_counter()
+
+    def run(self, label, function, *args, **kwargs):
+        start = time.perf_counter()
+        try:
+            return function(*args, **kwargs)
+        finally:
+            self.durations.append((label, time.perf_counter() - start))
+
+    def print_summary(self):
+        print("\n========== EXECUTION TIME SUMMARY ==========")
+        for label, seconds in self.durations:
+            print(f"{label:<30}: {seconds:>9.2f} seconds")
+        print(f"{'TOTAL BATCH TIME':<30}: {time.perf_counter() - self.started_at:>9.2f} seconds")
+        print("============================================")
 
 
-========================================
-FINBERT SENTIMENT ANALYSIS COMPLETED
-========================================
-Articles processed: 2
-Article-ticker records: 2
+def process_one_batch(spark):
+    """Process all currently available, stable Bronze files using an existing Spark session."""
+    timer = StageTimer()
+    batch_started = datetime.now(timezone.utc)
+    print("\n\n================================================")
+    print("          STARTING SILVER NEWS BATCH")
+    print("================================================")
 
-Sentiment analysis completed successfully.
+    try:
+        print("\n========== STEP 1: CHECKPOINT RECOVERY ==========")
+        timer.run("Checkpoint Recovery", recover_checkpoints)
 
-========== STEP 9: WRITE OUTPUTS + AUDIT ==========
+        print("\n========== STEP 2: READ BRONZE ==========")
+        news_df, new_files = timer.run("Read Bronze", read_new_bronze, spark)
+        if not new_files:
+            print("\nNo new Bronze files found. Waiting for the next file.")
+            return False
 
-========== SAFE BATCH WRITING ==========
+        bronze_filenames = sorted(Path(file).name for file in new_files)
+        print("New Bronze files:", len(bronze_filenames))
+        for filename in bronze_filenames:
+            print(" -", filename)
+        batch_id = generate_batch_id(bronze_filenames)
+        print("\nBatch ID:", batch_id)
 
-Writing article-level Silver data...
+        if news_df is None:
+            print("\nNew files contain no records. Committing empty batch.")
+            create_commit_marker(batch_id, bronze_filenames, [])
+            timer.run("Checkpoint Recovery", recover_checkpoints)
+            return True
 
-Writing Parquet using PyArrow...
-Records to write: 2                                                             
-Parquet file written: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\_staging\batch_4633011e44fac97b\news\part-00000.parquet
+        print("\n========== STEP 3: EXACT DEDUPLICATION ==========")
+        unique_new_df, missing_id_df = timer.run("Exact Deduplication", deduplicate_news, news_df)
+        candidates_df = unique_new_df.unionByName(missing_id_df, allowMissingColumns=True)
+        candidate_count = candidates_df.count()
+        print("Records proceeding to validation:", candidate_count)
+        batch_article_ids = get_article_ids(candidates_df)
 
-Writing ticker-level Silver data...
+        print("\n========== STEP 4: VALIDATION ==========")
+        valid_df, invalid_df = timer.run("Validation", validate_news, candidates_df)
+        valid_count = valid_df.count()
+        invalid_count = invalid_df.count()
+        print("Valid articles:", valid_count)
+        print("Invalid articles:", invalid_count)
 
-Writing Parquet using PyArrow...
-Records to write: 2                                                             
-Parquet file written: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\_staging\batch_4633011e44fac97b\news_by_ticker\part-00000.parquet
+        print("\n========== STEP 5: HTML CLEANING ==========")
+        cleaned_df = timer.run("HTML Cleaning", clean_news, valid_df)
 
-Writing DLQ records...
+        print("\n========== STEP 6: TICKER EXTRACTION ==========")
+        news_with_tickers_df, news_by_ticker_df = timer.run("Ticker Extraction", extract_tickers, cleaned_df)
 
-Writing Parquet using PyArrow...
-Records to write: 0                                                             
-Parquet file written: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\_staging\batch_4633011e44fac97b\dead_letter\part-00000.parquet
+        print("\n========== STEP 7: SEMANTIC DEDUPLICATION ==========")
+        unique_news_df, semantic_duplicates_df = timer.run(
+            "Semantic Deduplication", semantic_deduplicate_news, news_with_tickers_df
+        )
+        # Add batch metadata to every audit row before the atomic batch write.
+        semantic_duplicates_df = (
+            semantic_duplicates_df
+            .withColumn("batch_id", lit(batch_id))
+            .withColumn("detected_at_utc", lit(batch_started.isoformat()))
+        )
+        unique_count = unique_news_df.count()
+        duplicate_count = semantic_duplicates_df.count()
+        print("Articles after semantic deduplication:", unique_count)
+        print("Semantic duplicates detected:", duplicate_count)
 
-Writing semantic duplicate audit...
+        unique_article_ids = unique_news_df.select("article_id").distinct()
+        unique_news_by_ticker_df = news_by_ticker_df.join(unique_article_ids, on="article_id", how="inner")
+        print("Unique article-ticker mappings:", unique_news_by_ticker_df.count())
 
-Writing Parquet using PyArrow...
-Records to write: 0                                                             
-Parquet file written: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\_staging\batch_4633011e44fac97b\semantic_duplicates\part-00000.parquet
-Commit marker created: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\checkpoints\committed_batches\batch_4633011e44fac97b.json
+        print("\n========== STEP 8: FINBERT SENTIMENT ==========")
+        if unique_count > 0:
+            news_with_sentiment_df, news_by_ticker_with_sentiment_df = timer.run(
+                "FinBERT Inference", analyse_sentiment, unique_news_df, unique_news_by_ticker_df
+            )
+        else:
+            print("No unique articles. Skipping FinBERT.")
+            news_with_sentiment_df = add_empty_sentiment_columns(unique_news_df)
+            news_by_ticker_with_sentiment_df = add_empty_sentiment_columns(unique_news_by_ticker_df)
 
-========================================
-BATCH COMMITTED SUCCESSFULLY
-========================================
-Batch ID: batch_4633011e44fac97b
-Bronze files: 1
-Article IDs: 2
-News output: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\silver\news\batch_id=batch_4633011e44fac97b
-Ticker output: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\silver\news_by_ticker\batch_id=batch_4633011e44fac97b
-DLQ output: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\processed\dead_letter\batch_id=batch_4633011e44fac97b
-Semantic duplicate audit: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\audit\semantic_duplicates\batch_id=batch_4633011e44fac97b
+        print("\n========== STEP 9: WRITE OUTPUTS + AUDIT ==========")
+        committed = timer.run(
+            "Write Silver + DLQ + Audit",
+            write_batch_outputs,
+            batch_id=batch_id,
+            news_with_sentiment_df=news_with_sentiment_df,
+            news_by_ticker_with_sentiment_df=news_by_ticker_with_sentiment_df,
+            invalid_df=invalid_df,
+            semantic_duplicates_df=semantic_duplicates_df,
+            bronze_files=bronze_filenames,
+            processed_article_ids=batch_article_ids,
+            semantic_duplicate_count=duplicate_count,
+        )
 
-========== STEP 10: UPDATE CHECKPOINTS ==========
-Historical cache updated with committed articles: 2                             
-Checkpoint files updated successfully.
+        print("\n========== STEP 10: UPDATE CHECKPOINTS ==========")
+        if committed:
+            # Keep the in-memory history aligned with disk only after the output commit succeeds.
+            timer.run("Update Historical Cache", register_committed_articles, unique_news_df)
+            processed_files = load_processed_files()
+            processed_files.update(bronze_filenames)
+            save_processed_files(processed_files)
+            processed_ids = load_processed_article_ids()
+            processed_ids.update(batch_article_ids)
+            save_processed_article_ids(processed_ids)
+            print("Checkpoint files updated successfully.")
+        else:
+            print("Batch already committed; recovering checkpoints.")
+            recover_checkpoints()
 
-================================================
-          SILVER NEWS BATCH COMPLETED
-================================================
-Batch ID: batch_4633011e44fac97b
-Bronze files processed: 1
-Articles considered: 2
-Valid articles: 2
-Invalid articles: 0
-Semantic duplicates: 0
-Unique articles: 2
-Article IDs checkpointed: 2
+        print("\n================================================")
+        print("          SILVER NEWS BATCH COMPLETED")
+        print("================================================")
+        print("Batch ID:", batch_id)
+        print("Bronze files processed:", len(bronze_filenames))
+        print("Articles considered:", candidate_count)
+        print("Valid articles:", valid_count)
+        print("Invalid articles:", invalid_count)
+        print("Semantic duplicates:", duplicate_count)
+        print("Unique articles:", unique_count)
+        print("Article IDs checkpointed:", len(batch_article_ids))
+        timer.print_summary()
+        return True
 
-========== EXECUTION TIME SUMMARY ==========
-Checkpoint Recovery           :      0.04 seconds
-Read Bronze                   :     42.03 seconds
-Exact Deduplication           :     69.23 seconds
-Validation                    :    112.83 seconds
-HTML Cleaning                 :      0.29 seconds
-Ticker Extraction             :    191.73 seconds
-Semantic Deduplication        :     34.76 seconds
-FinBERT Inference             :    137.25 seconds
-Write Silver + DLQ + Audit    :     91.78 seconds
-Update Historical Cache       :     17.77 seconds
-TOTAL BATCH TIME              :    964.11 seconds
-============================================
+    except Exception as error:
+        print("\n================================================")
+        print("          SILVER NEWS BATCH FAILED")
+        print("================================================")
+        print("Error:", str(error))
+        timer.print_summary()
+        raise
+
+
+def wait_until_files_are_stable(files):
+    """Wait until each new Parquet file has an unchanged size across checks."""
+    previous_sizes = {}
+    stable_counts = {Path(file): 0 for file in files}
+    pending = set(Path(file) for file in files)
+    while pending:
+        for file in list(pending):
+            try:
+                current_size = file.stat().st_size
+            except FileNotFoundError:
+                pending.remove(file)
+                continue
+            if previous_sizes.get(file) == current_size and current_size > 0:
+                stable_counts[file] += 1
+            else:
+                stable_counts[file] = 0
+            previous_sizes[file] = current_size
+            if stable_counts[file] >= FILE_STABILITY_CHECKS:
+                pending.remove(file)
+        if pending:
+            time.sleep(1)
+
+
+def run_silver_pipeline(continuous=True):
+    print("\n================================================")
+    print("       STARTING SILVER NEWS PIPELINE SERVICE")
+    print("================================================")
+    print("Bronze folder:", BRONZE_PATH)
+    print("Mode:", "CONTINUOUS" if continuous else "ONE-TIME")
+
+    spark = (
+        SparkSession.builder
+        .appName("SilverNewsPipeline")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .getOrCreate()
+    )
+    spark.sparkContext.setLogLevel("ERROR")
+
+    try:
+        # Load both ML models once at service startup, then reuse them for all batches.
+        startup_start = time.perf_counter()
+        print("\n========== SERVICE MODEL INITIALIZATION ==========")
+        load_embedding_model()
+        load_finbert()
+        print(f"Model initialization completed in {time.perf_counter() - startup_start:.2f} seconds")
+
+        recover_checkpoints()
+
+        if not continuous:
+            process_one_batch(spark)
+            return
+
+        print("\nService is running. Monitoring Bronze for new Parquet files.")
+        print("Press Ctrl+C to stop the service gracefully.\n")
+        while True:
+            pending_files = [Path(p) for p in sorted(BRONZE_PATH.glob("*.parquet"))
+                             if p.name not in load_processed_files()]
+            if pending_files:
+                print(f"\nDetected {len(pending_files)} new Bronze file(s). Checking file stability...")
+                wait_until_files_are_stable(pending_files)
+                try:
+                    process_one_batch(spark)
+                except Exception as batch_error:
+                    print("\nBatch failed; files remain uncheckpointed and will be retried.")
+                    print("Retrying after 15 seconds. Error:", batch_error)
+                    time.sleep(15)
+            else:
+                time.sleep(POLL_INTERVAL_SECONDS)
+
+    except KeyboardInterrupt:
+        print("\nCtrl+C received. Shutting down Silver service...")
+    finally:
+        spark.stop()
+        print("Spark session stopped. Silver service shut down.")
+
+
+if __name__ == "__main__":
+    # Continuous mode is the default. Use --once for a single batch and exit.
+    run_silver_pipeline(continuous="--once" not in sys.argv)

@@ -134,20 +134,12 @@ def deduplicate_news(news_df):
         .drop("row_number")
     )
 
-    # Summary.
-
-    incoming_count = news_df.count()
-    missing_count = missing_id_df.count()
-    unique_count = unique_new_df.count()
-
-    print("\n========== DEDUPLICATION SUMMARY ==========")
-
-    print("Incoming records:", incoming_count)
+    # Do not run Spark count() actions here. The caller performs the
+    # required batch-level materialization once; repeated counts here
+    # would launch extra Spark jobs without changing the result.
+    print("\nExact article-level deduplication transformations prepared.")
     print("Previously processed IDs:", len(processed_ids))
-    print("Records with missing article IDs:", missing_count)
-    print("New unique articles:", unique_count)
-
-    print("\nArticle-level deduplication completed!")
+    print("Article-level deduplication completed!")
 
     return unique_new_df, missing_id_df
 
