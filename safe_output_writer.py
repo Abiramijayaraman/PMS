@@ -1,0 +1,418 @@
+
+import json
+import shutil
+import re
+from pathlib import Path
+
+
+# --------------------------------------------------
+# 1. PROJECT PATHS
+# --------------------------------------------------
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+DATA_PATH = PROJECT_ROOT / "silver_news" / "data"
+
+STAGING_PATH = DATA_PATH / "_staging"
+
+SILVER_PATH = DATA_PATH / "silver"
+
+NEWS_PATH = SILVER_PATH / "news"
+
+NEWS_BY_TICKER_PATH = SILVER_PATH / "news_by_ticker"
+
+DLQ_PATH = DATA_PATH / "processed" / "dead_letter"
+
+AUDIT_PATH = DATA_PATH / "audit" / "semantic_duplicates"
+
+CHECKPOINT_PATH = DATA_PATH / "checkpoints"
+
+COMMITTED_BATCHES_PATH = CHECKPOINT_PATH / "committed_batches"
+
+
+# --------------------------------------------------
+# 2. CHECK WHETHER BATCH IS ALREADY COMMITTED
+# --------------------------------------------------
+
+def is_batch_committed(batch_id):
+
+    marker_path = (
+        COMMITTED_BATCHES_PATH
+        / f"{batch_id}.json"
+    )
+
+    return marker_path.exists()
+
+
+# --------------------------------------------------
+# 3. WRITE A DATAFRAME USING PYARROW
+# --------------------------------------------------
+
+def write_dataframe(dataframe, output_path):
+
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    print("\nWriting Parquet using PyArrow...")
+
+    # Create output directory.
+    output_path.mkdir(
+        parents=True,
+        exist_ok=False
+    )
+
+    # Convert Spark DataFrame to Pandas.
+    pandas_df = dataframe.toPandas()
+
+    print("Records to write:", len(pandas_df))
+
+    # Convert Pandas DataFrame to PyArrow Table.
+    arrow_table = pa.Table.from_pandas(
+        pandas_df,
+        preserve_index=False
+    )
+
+    # Define Parquet file path.
+    parquet_file = output_path / "part-00000.parquet"
+
+    # Write Parquet file.
+    pq.write_table(
+        arrow_table,
+        parquet_file,
+        compression="snappy"
+    )
+
+    print("Parquet file written:", parquet_file)
+
+
+# --------------------------------------------------
+# 4. CREATE COMMIT MARKER WITH BATCH METADATA
+# --------------------------------------------------
+
+def create_commit_marker(
+    batch_id,
+    bronze_files,
+    processed_article_ids
+):
+
+    COMMITTED_BATCHES_PATH.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    marker_path = (
+        COMMITTED_BATCHES_PATH
+        / f"{batch_id}.json"
+    )
+
+    temporary_path = marker_path.with_suffix(".tmp")
+
+    marker_data = {
+        "batch_id": batch_id,
+        "status": "COMMITTED",
+        "bronze_files": sorted(set(bronze_files)),
+        "processed_article_ids": sorted(
+            set(processed_article_ids)
+        )
+    }
+
+    with open(
+        temporary_path,
+        "w",
+        encoding="utf-8"
+    ) as file:
+
+        json.dump(
+            marker_data,
+            file,
+            indent=4
+        )
+
+    # Replace temporary marker with final marker.
+    temporary_path.replace(marker_path)
+
+    print("Commit marker created:", marker_path)
+
+
+# --------------------------------------------------
+# 5. RECOVER CHECKPOINTS FROM COMMITTED BATCHES
+# --------------------------------------------------
+
+def recover_checkpoints():
+
+    from checkpoint_manager import (
+        load_processed_files,
+        save_processed_files,
+        load_processed_article_ids,
+        save_processed_article_ids
+    )
+
+    print("\n========== CHECKPOINT RECOVERY ==========")
+
+    processed_files = load_processed_files()
+
+    processed_article_ids = load_processed_article_ids()
+
+    if not COMMITTED_BATCHES_PATH.exists():
+
+        print("No committed batches found.")
+
+        return
+
+    committed_count = 0
+
+    for marker_path in COMMITTED_BATCHES_PATH.glob("*.json"):
+
+        with open(
+            marker_path,
+            "r",
+            encoding="utf-8"
+        ) as file:
+
+            marker_data = json.load(file)
+
+        if marker_data.get("status") != "COMMITTED":
+            continue
+
+        # Check that recovery metadata exists.
+        if (
+            "bronze_files" not in marker_data
+            or "processed_article_ids" not in marker_data
+        ):
+
+            raise ValueError(
+                f"Commit marker {marker_path.name} "
+                "does not contain recovery metadata."
+            )
+
+        processed_files.update(
+            marker_data["bronze_files"]
+        )
+
+        processed_article_ids.update(
+            marker_data["processed_article_ids"]
+        )
+
+        committed_count += 1
+
+    # Save recovered checkpoints.
+    save_processed_files(processed_files)
+
+    save_processed_article_ids(processed_article_ids)
+
+    print("Committed batches recovered:", committed_count)
+
+    print("Processed Bronze files:", len(processed_files))
+
+    print("Processed article IDs:", len(processed_article_ids))
+
+    print("Checkpoint recovery completed.")
+
+
+# --------------------------------------------------
+# 6. WRITE ALL BATCH OUTPUTS SAFELY
+# --------------------------------------------------
+
+def write_batch_outputs(
+    batch_id,
+    news_with_sentiment_df,
+    news_by_ticker_with_sentiment_df,
+    invalid_df,
+    semantic_duplicates_df,
+    bronze_files,
+    processed_article_ids
+):
+
+    print("\n========== SAFE BATCH WRITING ==========")
+
+    # Validate batch ID.
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", batch_id):
+
+        raise ValueError("Invalid batch ID")
+
+    # Do not overwrite an already committed batch.
+    if is_batch_committed(batch_id):
+
+        print("Batch already committed:", batch_id)
+
+        return False
+
+    # Define batch-specific paths.
+    staging_batch = STAGING_PATH / batch_id
+
+    final_news = (
+        NEWS_PATH / f"batch_id={batch_id}"
+    )
+
+    final_ticker = (
+        NEWS_BY_TICKER_PATH / f"batch_id={batch_id}"
+    )
+
+    final_dlq = (
+        DLQ_PATH / f"batch_id={batch_id}"
+    )
+
+    final_audit = (
+        AUDIT_PATH / f"batch_id={batch_id}"
+    )
+
+    final_paths = [
+        final_news,
+        final_ticker,
+        final_dlq,
+        final_audit,
+    ]
+
+    # Remove incomplete staging data from earlier attempts.
+    if staging_batch.exists():
+
+        shutil.rmtree(staging_batch)
+
+    # Remove incomplete final outputs only if there is
+    # no commit marker for this batch.
+    for path in final_paths:
+
+        if path.exists():
+
+            shutil.rmtree(path)
+
+    staging_batch.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    staged_news = staging_batch / "news"
+
+    staged_ticker = staging_batch / "news_by_ticker"
+
+    staged_dlq = staging_batch / "dead_letter"
+
+    staged_audit = staging_batch / "semantic_duplicates"
+
+    try:
+
+        # ------------------------------------------
+        # A. WRITE ARTICLE-LEVEL SILVER DATA
+        # ------------------------------------------
+
+        print("\nWriting article-level Silver data...")
+
+        write_dataframe(
+            news_with_sentiment_df,
+            staged_news
+        )
+
+        # ------------------------------------------
+        # B. WRITE TICKER-LEVEL SILVER DATA
+        # ------------------------------------------
+
+        print("\nWriting ticker-level Silver data...")
+
+        write_dataframe(
+            news_by_ticker_with_sentiment_df,
+            staged_ticker
+        )
+
+        # ------------------------------------------
+        # C. WRITE DEAD LETTER RECORDS
+        # ------------------------------------------
+
+        print("\nWriting DLQ records...")
+
+        write_dataframe(
+            invalid_df,
+            staged_dlq
+        )
+
+        # ------------------------------------------
+        # D. WRITE SEMANTIC DUPLICATE AUDIT
+        # ------------------------------------------
+
+        print("\nWriting semantic duplicate audit...")
+
+        write_dataframe(
+            semantic_duplicates_df,
+            staged_audit
+        )
+
+        # ------------------------------------------
+        # E. MOVE STAGED OUTPUTS TO FINAL PATHS
+        # ------------------------------------------
+
+        NEWS_PATH.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
+        NEWS_BY_TICKER_PATH.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
+        DLQ_PATH.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
+        AUDIT_PATH.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
+        staged_news.rename(final_news)
+
+        staged_ticker.rename(final_ticker)
+
+        staged_dlq.rename(final_dlq)
+
+        staged_audit.rename(final_audit)
+
+        # ------------------------------------------
+        # F. CREATE COMMIT MARKER
+        # ------------------------------------------
+
+        create_commit_marker(
+            batch_id=batch_id,
+            bronze_files=bronze_files,
+            processed_article_ids=processed_article_ids
+        )
+
+        print("\n========================================")
+        print("BATCH COMMITTED SUCCESSFULLY")
+        print("========================================")
+
+        print("Batch ID:", batch_id)
+
+        print("Bronze files:", len(bronze_files))
+
+        print("Article IDs:", len(processed_article_ids))
+
+        print("News output:", final_news)
+
+        print("Ticker output:", final_ticker)
+
+        print("DLQ output:", final_dlq)
+
+        print("Semantic duplicate audit:", final_audit)
+
+        return True
+
+    except Exception:
+
+        # Preserve outputs if the commit marker exists.
+        if not is_batch_committed(batch_id):
+
+            for path in final_paths:
+
+                if path.exists():
+
+                    shutil.rmtree(path)
+
+        raise
+
+    finally:
+
+        # Remove remaining staging data.
+        if staging_batch.exists():
+
+            shutil.rmtree(staging_batch)
