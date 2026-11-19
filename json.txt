@@ -1,18 +1,32 @@
-PS C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine> Get-ChildItem                                            
- 
-    
-    Directory: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine
+PS C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine> Get-ChildItem .\silver_news
+
+
+    Directory: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news
 
 
 Mode                 LastWriteTime         Length Name                                                             
 ----                 -------------         ------ ----                                                             
-d-----        19-11-2026     11:19                news_bronze                                                      
-d-----        19-11-2026     11:33                silver_news                                                      
--a----        19-11-2026     11:19            254 .env                                                             
--a----        19-11-2026     11:19            514 .gitignore                                                       
--a----        19-11-2026     11:19          13804 README.md                                                        
--a----        19-11-2026     11:19            349 requirements.txt                                                 
--a----        19-11-2026     11:19           4211 view_parquet.py                                                  
+d-----        19-11-2026     11:19                config                                                           
+d-----        19-11-2026     11:19                data                                                             
+d-----        19-11-2026     11:33                models                                                           
+d-----        19-11-2026     11:19                src                                                              
+d-----        19-11-2026     11:19                tests                                                            
+-a----        19-11-2026     11:19            261 requirements.txt                                                 
 
 
-PS C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine> 
+PS C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine> Get-ChildItem .\silver_news -Directory
+
+
+    Directory: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news
+
+
+Mode                 LastWriteTime         Length Name                                                             
+----                 -------------         ------ ----                                                             
+d-----        19-11-2026     11:19                config                                                           
+d-----        19-11-2026     11:19                data                                                             
+d-----        19-11-2026     11:33                models                                                           
+d-----        19-11-2026     11:19                src                                                              
+d-----        19-11-2026     11:19                tests                                                            
+
+
+PS C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine>
