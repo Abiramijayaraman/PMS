@@ -127,14 +127,14 @@ def process_one_batch(spark):
         print("\n========== STEP 3: EXACT DEDUPLICATION ==========")
         unique_new_df, missing_id_df = timer.run("Exact Deduplication", deduplicate_news, news_df)
         candidates_df = unique_new_df.unionByName(missing_id_df, allowMissingColumns=True)
-        candidate_count = candidates_df.count()
+        candidate_count = timer.run("Candidate count action", candidates_df.count)
         print("Records proceeding to validation:", candidate_count)
-        batch_article_ids = get_article_ids(candidates_df)
+        batch_article_ids = timer.run("Collect article IDs", get_article_ids, candidates_df)
 
         print("\n========== STEP 4: VALIDATION ==========")
         valid_df, invalid_df = timer.run("Validation", validate_news, candidates_df)
-        valid_count = valid_df.count()
-        invalid_count = invalid_df.count()
+        valid_count = timer.run("Valid record count action", valid_df.count)
+        invalid_count = timer.run("Invalid record count action", invalid_df.count)
         print("Valid articles:", valid_count)
         print("Invalid articles:", invalid_count)
 
@@ -154,14 +154,18 @@ def process_one_batch(spark):
             .withColumn("batch_id", lit(batch_id))
             .withColumn("detected_at_utc", lit(batch_started.isoformat()))
         )
-        unique_count = unique_news_df.count()
-        duplicate_count = semantic_duplicates_df.count()
+        unique_count = timer.run("Unique article count action", unique_news_df.count)
+        duplicate_count = timer.run("Duplicate audit count action", semantic_duplicates_df.count)
         print("Articles after semantic deduplication:", unique_count)
         print("Semantic duplicates detected:", duplicate_count)
 
         unique_article_ids = unique_news_df.select("article_id").distinct()
         unique_news_by_ticker_df = news_by_ticker_df.join(unique_article_ids, on="article_id", how="inner")
-        print("Unique article-ticker mappings:", unique_news_by_ticker_df.count())
+        ticker_mapping_count = timer.run(
+            "Ticker mapping count action",
+            unique_news_by_ticker_df.count
+        )
+        print("Unique article-ticker mappings:", ticker_mapping_count)
 
         print("\n========== STEP 8: FINBERT SENTIMENT ==========")
         if unique_count > 0:

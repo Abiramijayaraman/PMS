@@ -1,5 +1,6 @@
 
 import torch
+import time
 
 from pathlib import Path
 
@@ -127,6 +128,7 @@ def analyse_batch(
 ):
 
     # Convert multiple articles into tokens.
+    tokenization_started = time.perf_counter()
     inputs = tokenizer(
         news_texts,
         return_tensors="pt",
@@ -134,6 +136,7 @@ def analyse_batch(
         truncation=True,
         max_length=MAX_LENGTH
     )
+    tokenization_seconds = time.perf_counter() - tokenization_started
 
     # Move tensors to CPU or GPU.
     inputs = {
@@ -142,6 +145,7 @@ def analyse_batch(
     }
 
     # Perform inference without gradient calculation.
+    inference_started = time.perf_counter()
     with torch.inference_mode():
 
         outputs = model(**inputs)
@@ -151,7 +155,14 @@ def analyse_batch(
             dim=-1
         )
 
+    inference_seconds = time.perf_counter() - inference_started
     probabilities = probabilities.cpu().tolist()
+
+    print(
+        f"FinBERT batch profile: {len(news_texts)} article(s) | "
+        f"tokenization={tokenization_seconds:.3f}s | "
+        f"model_inference={inference_seconds:.3f}s"
+    )
 
     results = []
 
@@ -239,10 +250,15 @@ def analyse_sentiment(
     # 6. COLLECT ARTICLE-LEVEL RECORDS
     # --------------------------------------------------
 
+    article_collect_started = time.perf_counter()
     news_records = [
         row.asDict(recursive=True)
         for row in news_with_tickers_df.collect()
     ]
+    print(
+        "Article records collected in "
+        f"{time.perf_counter() - article_collect_started:.3f} seconds"
+    )
 
     if not news_records:
         raise ValueError(
@@ -351,10 +367,15 @@ def analyse_sentiment(
     # 12. ADD SENTIMENT TO NEWS BY TICKER
     # --------------------------------------------------
 
+    ticker_collect_started = time.perf_counter()
     ticker_records = [
         row.asDict(recursive=True)
         for row in news_by_ticker_df.collect()
     ]
+    print(
+        "Ticker records collected in "
+        f"{time.perf_counter() - ticker_collect_started:.3f} seconds"
+    )
 
     news_by_ticker_with_sentiment = []
 
@@ -421,8 +442,31 @@ def analyse_sentiment(
             )
         )
 
-    # Avoid Spark .show() actions here. They would execute two additional
-    # Spark jobs solely for terminal display; inference totals are printed below.
+    # Print real Python results directly. This avoids Spark .show()
+    # actions, which would launch extra Spark jobs for terminal display.
+    print("\\n========== ARTICLE-LEVEL FINBERT RESULTS ==========")
+    for article in news_with_sentiment:
+        print(f"Article ID       : {article.get('article_id', '')}")
+        print(f"Headline         : {article.get('cleaned_headline') or article.get('headline', '')}")
+        tickers = article.get('matched_tickers') or []
+        if isinstance(tickers, str):
+            tickers = [tickers]
+        print(f"Matched tickers  : {', '.join(tickers)}")
+        print(f"Sentiment        : {str(article.get('sentiment', '')).upper()}")
+        print(f"Positive score   : {article.get('positive_score', 0.0):.4f}")
+        print(f"Negative score   : {article.get('negative_score', 0.0):.4f}")
+        print(f"Neutral score    : {article.get('neutral_score', 0.0):.4f}")
+        print(f"Sentiment score  : {article.get('sentiment_score', 0.0):.4f}")
+        print("-" * 72)
+
+    print("\\n========== TICKER-LEVEL FINBERT RESULTS ==========")
+    print(f"{'Ticker':<18} {'Sentiment':<12} {'Score':>12}")
+    for record in news_by_ticker_with_sentiment:
+        print(
+            f"{str(record.get('ticker', '')):<18} "
+            f"{str(record.get('sentiment', '')).upper():<12} "
+            f"{float(record.get('sentiment_score') or 0.0):>12.4f}"
+        )
 
     # --------------------------------------------------
     # 16. FINAL SUMMARY
