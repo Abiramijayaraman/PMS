@@ -61,7 +61,7 @@ def write_dataframe(dataframe, output_path):
         exist_ok=False
     )
 
-    # Convert Spark DataFrame to Pandas.
+    # Arrow-backed conversion is enabled in the Spark session for faster local transfers.
     pandas_df = dataframe.toPandas()
 
     print("Records to write:", len(pandas_df))

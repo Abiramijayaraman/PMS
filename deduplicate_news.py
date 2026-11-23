@@ -2,6 +2,7 @@
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from functools import lru_cache
+import numpy as np
 
 import pyarrow.parquet as pq
 
@@ -352,10 +353,11 @@ def generate_embedding(text):
     model = load_embedding_model()
     embedding = model.encode(
         text,
-        convert_to_tensor=True,
-        normalize_embeddings=True
+        convert_to_numpy=True,
+        normalize_embeddings=True,
+        show_progress_bar=False
     )
-    return embedding
+    return np.asarray(embedding, dtype=np.float32)
 
 
 # ==================================================
@@ -375,14 +377,8 @@ def calculate_similarity(
         historical_text
     )
 
-    similarity = util.cos_sim(
-        incoming_embedding,
-        historical_embedding
-    )
-
-    return float(
-        similarity.item()
-    )
+    # Embeddings are normalized once; cosine similarity is a fast dot product.
+    return float(np.dot(incoming_embedding, historical_embedding))
 
 
 # ==================================================

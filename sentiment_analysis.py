@@ -21,8 +21,8 @@ PROJECT_FOLDER = Path(__file__).resolve().parents[1]
 
 MODEL_PATH = PROJECT_FOLDER / "models" / "finbert"
 
-BATCH_SIZE = 8
-MAX_LENGTH = 512
+BATCH_SIZE = 24
+MAX_LENGTH = 512  # Keep full FinBERT text window; batching improves throughput without changing logic.
 _FINBERT_CACHE = None
 
 

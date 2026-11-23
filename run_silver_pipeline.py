@@ -10,6 +10,7 @@ os.environ["PYSPARK_PYTHON"] = sys.executable
 os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
 
 from pyspark.sql import SparkSession
+from pyspark.storagelevel import StorageLevel
 from pyspark.sql.functions import col, trim, lit
 
 from read_bronze import read_new_bronze, BRONZE_PATH
@@ -37,6 +38,8 @@ from safe_output_writer import (
 
 POLL_INTERVAL_SECONDS = 5
 FILE_STABILITY_CHECKS = 2
+# Local Windows runs perform best with a small, stable worker pool for this workload.
+LOCAL_SPARK_WORKERS = 2
 
 
 def generate_batch_id(bronze_files):
@@ -96,6 +99,7 @@ class StageTimer:
 def process_one_batch(spark):
     """Process all currently available, stable Bronze files using an existing Spark session."""
     timer = StageTimer()
+    cached_frames = []
     batch_started = datetime.now(timezone.utc)
     print("\n\n================================================")
     print("          STARTING SILVER NEWS BATCH")
@@ -127,12 +131,19 @@ def process_one_batch(spark):
         print("\n========== STEP 3: EXACT DEDUPLICATION ==========")
         unique_new_df, missing_id_df = timer.run("Exact Deduplication", deduplicate_news, news_df)
         candidates_df = unique_new_df.unionByName(missing_id_df, allowMissingColumns=True)
-        candidate_count = timer.run("Candidate count action", candidates_df.count)
+        candidates_df = candidates_df.persist(StorageLevel.MEMORY_AND_DISK)
+        cached_frames.append(candidates_df)
+        # Collect IDs once: this supplies both candidate count and checkpoint IDs.
+        candidate_id_rows = timer.run("Collect candidate IDs", lambda: candidates_df.select("article_id").collect())
+        candidate_count = len(candidate_id_rows)
+        batch_article_ids = {row["article_id"] for row in candidate_id_rows if row["article_id"]}
         print("Records proceeding to validation:", candidate_count)
-        batch_article_ids = timer.run("Collect article IDs", get_article_ids, candidates_df)
 
         print("\n========== STEP 4: VALIDATION ==========")
         valid_df, invalid_df = timer.run("Validation", validate_news, candidates_df)
+        valid_df = valid_df.persist(StorageLevel.MEMORY_AND_DISK)
+        invalid_df = invalid_df.persist(StorageLevel.MEMORY_AND_DISK)
+        cached_frames.extend([valid_df, invalid_df])
         valid_count = timer.run("Valid record count action", valid_df.count)
         invalid_count = timer.run("Invalid record count action", invalid_df.count)
         print("Valid articles:", valid_count)
@@ -140,9 +151,14 @@ def process_one_batch(spark):
 
         print("\n========== STEP 5: HTML CLEANING ==========")
         cleaned_df = timer.run("HTML Cleaning", clean_news, valid_df)
+        cleaned_df = cleaned_df.persist(StorageLevel.MEMORY_AND_DISK)
+        cached_frames.append(cleaned_df)
 
         print("\n========== STEP 6: TICKER EXTRACTION ==========")
         news_with_tickers_df, news_by_ticker_df = timer.run("Ticker Extraction", extract_tickers, cleaned_df)
+        news_with_tickers_df = news_with_tickers_df.persist(StorageLevel.MEMORY_AND_DISK)
+        news_by_ticker_df = news_by_ticker_df.persist(StorageLevel.MEMORY_AND_DISK)
+        cached_frames.extend([news_with_tickers_df, news_by_ticker_df])
 
         print("\n========== STEP 7: SEMANTIC DEDUPLICATION ==========")
         unique_news_df, semantic_duplicates_df = timer.run(
@@ -154,6 +170,9 @@ def process_one_batch(spark):
             .withColumn("batch_id", lit(batch_id))
             .withColumn("detected_at_utc", lit(batch_started.isoformat()))
         )
+        unique_news_df = unique_news_df.persist(StorageLevel.MEMORY_AND_DISK)
+        semantic_duplicates_df = semantic_duplicates_df.persist(StorageLevel.MEMORY_AND_DISK)
+        cached_frames.extend([unique_news_df, semantic_duplicates_df])
         unique_count = timer.run("Unique article count action", unique_news_df.count)
         duplicate_count = timer.run("Duplicate audit count action", semantic_duplicates_df.count)
         print("Articles after semantic deduplication:", unique_count)
@@ -161,6 +180,8 @@ def process_one_batch(spark):
 
         unique_article_ids = unique_news_df.select("article_id").distinct()
         unique_news_by_ticker_df = news_by_ticker_df.join(unique_article_ids, on="article_id", how="inner")
+        unique_news_by_ticker_df = unique_news_by_ticker_df.persist(StorageLevel.MEMORY_AND_DISK)
+        cached_frames.append(unique_news_by_ticker_df)
         ticker_mapping_count = timer.run(
             "Ticker mapping count action",
             unique_news_by_ticker_df.count
@@ -227,6 +248,12 @@ def process_one_batch(spark):
         print("Error:", str(error))
         timer.print_summary()
         raise
+    finally:
+        for cached_frame in reversed(cached_frames):
+            try:
+                cached_frame.unpersist(blocking=False)
+            except Exception:
+                pass
 
 
 def wait_until_files_are_stable(files):
@@ -262,11 +289,17 @@ def run_silver_pipeline(continuous=True):
     spark = (
         SparkSession.builder
         .appName("SilverNewsPipeline")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
+        .master(f"local[{LOCAL_SPARK_WORKERS}]")
+        .config("spark.sql.shuffle.partitions", str(LOCAL_SPARK_WORKERS))
+        .config("spark.default.parallelism", str(LOCAL_SPARK_WORKERS))
+        .config("spark.python.worker.reuse", "true")
+        .config("spark.sql.execution.arrow.pyspark.enabled", "true")
+        .config("spark.sql.execution.arrow.pyspark.fallback.enabled", "true")
+        .config("spark.sql.adaptive.enabled", "true")
         .getOrCreate()
     )
     spark.sparkContext.setLogLevel("ERROR")
+    print(f"Spark local worker count: {LOCAL_SPARK_WORKERS} (limited to reduce Windows worker/socket overhead)")
 
     try:
         # Load both ML models once at service startup, then reuse them for all batches.
