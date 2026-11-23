@@ -1,74 +1,20 @@
-from deduplicate_news import (
-    calculate_similarity,
-    has_shared_event_context,
-    detect_new_information
-)
+(.venv) PS C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\src> python test_semantic_dedup.py
 
-# ==========================================
-# TEST 2: SAME EVENT WITH NEW INFORMATION
-# ==========================================
+========== TEST 2 ==========
 
-original = (
-    "Infosys announces a 500 crore share buyback"
-)
+Loading local semantic embedding model...
+Loading weights: 100%|█████████████████████████████████████████████████████████████████████████████████| 103/103 [00:00<00:00, 2668.38it/s]
+Embedding model loaded successfully.
+Original: Infosys announces a 500 crore share buyback
+Incoming: Infosys announces a 500 crore share buyback as analysts warn of declining cash reserves and reduced investment capacity
 
-incoming = (
-    "Infosys announces a 500 crore share buyback "
-    "as analysts warn of declining cash reserves "
-    "and reduced investment capacity"
-)
+Cosine similarity: 0.9376
+Shared context: True
+Shared terms: ['500', 'announces', 'buyback', 'crore', 'infosys']
+New material terms: ['analysts', 'capacity', 'cash', 'investment']
+New numbers: []
+New information detected: True
 
-print("\n========== TEST 2 ==========")
-
-similarity = calculate_similarity(
-    original,
-    incoming
-)
-
-context_match, shared_terms = has_shared_event_context(
-    incoming,
-    original
-)
-
-has_new_info, new_terms, new_numbers = detect_new_information(
-    incoming,
-    original
-)
-
-print("Original:", original)
-print("Incoming:", incoming)
-
-print("\nCosine similarity:", round(similarity, 4))
-print("Shared context:", context_match)
-print("Shared terms:", shared_terms)
-print("New material terms:", new_terms)
-print("New numbers:", new_numbers)
-print("New information detected:", has_new_info)
-
-# ==========================================
-# DECISION LOGIC
-# ==========================================
-
-if similarity >= 0.90:
-
-    if has_new_info:
-        print("\nRESULT: HIGH SIMILARITY, BUT NEW INFORMATION")
-        print("ACTION: RETAIN incoming article")
-
-    else:
-        print("\nRESULT: HIGH-CONFIDENCE DUPLICATE")
-        print("ACTION: DISCARD incoming article")
-
-elif similarity >= 0.70:
-
-    if context_match and not has_new_info:
-        print("\nRESULT: MIDDLE-ZONE DUPLICATE")
-        print("ACTION: DISCARD incoming article")
-
-    else:
-        print("\nRESULT: RELATED NEWS WITH ADDITIONAL INFORMATION")
-        print("ACTION: RETAIN incoming article")
-
-else:
-    print("\nRESULT: UNIQUE NEWS")
-    print("ACTION: RETAIN incoming article")
+RESULT: HIGH SIMILARITY, BUT NEW INFORMATION
+ACTION: RETAIN incoming article
+(.venv) PS C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\src> 
