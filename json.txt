@@ -1,3 +1,571 @@
+PS C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine> .\.venv\Scripts\Activate.ps1                             
+(.venv) PS C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine> python run_silver_pipeline.py --once             
+C:\Program Files\Python312\python.exe: can't open file 'C:\\Users\\2000209448\\Documents\\FinTel_FINAL_With_Cosine\\run_silver_pipeline.py': [Errno 2] No such file or directory 
+(.venv) PS C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine> cd .\silver_news\src                             
+(.venv) PS C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\src> python run_silver_pipeline.py --once 
+                                                                       
+================================================
+       STARTING SILVER NEWS PIPELINE SERVICE                           
+================================================
+Bronze folder: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\news_bronze\shared_data\bronze\new_news_update
+Mode: ONE-TIME
+WARNING: Using incubator modules: jdk.incubator.vector
+26/11/20 10:01:02 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
+Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+26/11/20 10:01:03 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+
+========== SERVICE MODEL INITIALIZATION ==========
+
+Loading local semantic embedding model...
+Loading weights: 100%|█████████████████████████████████████████████████████████| 103/103 [00:00<00:00, 2150.18it/s]
+Embedding model loaded successfully.
+
+========== LOADING FINBERT ==========
+Using device: cpu
+Tokenizer loaded successfully.
+Loading weights: 100%|██████████████████████████████████████████████████████████| 201/201 [00:00<00:00, 356.01it/s]
+FinBERT model loaded successfully!
+
+Model sentiment labels:
+{'positive': 0, 'negative': 1, 'neutral': 2}
+Model initialization completed in 1.63 seconds
+
+========== CHECKPOINT RECOVERY ==========
+Committed batches recovered: 8
+Processed Bronze files: 22
+Processed article IDs: 50
+Checkpoint recovery completed.
+
+
+================================================
+          STARTING SILVER NEWS BATCH
+================================================
+
+========== STEP 1: CHECKPOINT RECOVERY ==========
+
+========== CHECKPOINT RECOVERY ==========
+Committed batches recovered: 8
+Processed Bronze files: 22
+Processed article IDs: 50
+Checkpoint recovery completed.
+
+========== STEP 2: READ BRONZE ==========
+
+========== INCREMENTAL FILE CHECK ==========
+Total Bronze files: 5
+Previously processed files: 22
+New files to process: 0
+SKIPPED: news_20261118T062018498715Z_0678ba20.parquet
+SKIPPED: news_20261118T062018665286Z_11170060.parquet
+SKIPPED: news_20261119T065518299142Z_85c25b66.parquet
+SKIPPED: news_20261119T065518393195Z_2af22eaa.parquet
+SKIPPED: news_20261119T095022765784Z_c9fb2cfe.parquet
+
+No new Bronze files found.
+
+No new Bronze files found. Waiting for the next file.
+Spark session stopped. Silver service shut down.
+SUCCESS: The process with PID 27256 (child process of PID 24664) has been terminated.
+SUCCESS: The process with PID 24664 (child process of PID 17736) has been terminated.
+SUCCESS: The process with PID 17736 (child process of PID 17836) has been terminated.
+(.venv) PS C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\src> 
+ *  History restored 
+
+PS C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine> .\.venv\Scripts\Activate.ps1        
+(.venv) PS C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine> python run_silver_pipeline.py --once
+ *  History restored 
+                                                           .\.venv\Scripts\Activate.ps1000209448\Documents\FinTel_FINAL_With_Cosine> 
+(.venv) PS C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine> python run_silver_pipeline.py --once
+C:\Program Files\Python312\python.exe: can't open file 'C:\\Users\\2000209448\\Documents\\FinTel_FINAL_With_Cosine\\run_silver_pipeline.py': [Errno 2] No such file or directory
+(.venv) PS C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine> cd silver_news
+(.venv) PS C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news> cd src
+(.venv) PS C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\src> python run_silver_pipeline.py --once
+
+================================================
+       STARTING SILVER NEWS PIPELINE SERVICE
+================================================
+Bronze folder: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\news_bronze\shared_data\bronze\new_news_update
+Mode: ONE-TIME
+WARNING: Using incubator modules: jdk.incubator.vector
+26/11/23 12:22:40 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
+Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+26/11/23 12:22:41 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+Spark local worker count: 2 (limited to reduce Windows worker/socket overhead)
+
+========== SERVICE MODEL INITIALIZATION ==========
+
+Loading local semantic embedding model...
+Loading weights: 100%|██████████████████████████████████████| 103/103 [00:00<00:00, 1782.17it/s]
+Embedding model loaded successfully.
+
+========== LOADING FINBERT ==========
+Using device: cpu
+Tokenizer loaded successfully.
+Loading weights: 100%|███████████████████████████████████████| 201/201 [00:00<00:00, 427.65it/s]
+FinBERT model loaded successfully!
+
+Model sentiment labels:
+{'positive': 0, 'negative': 1, 'neutral': 2}
+Model initialization completed in 1.48 seconds
+
+========== CHECKPOINT RECOVERY ==========
+Committed batches recovered: 8
+Processed Bronze files: 22
+Processed article IDs: 50
+Checkpoint recovery completed.
+
+
+================================================
+          STARTING SILVER NEWS BATCH
+================================================
+
+========== STEP 1: CHECKPOINT RECOVERY ==========
+
+========== CHECKPOINT RECOVERY ==========
+Committed batches recovered: 8
+Processed Bronze files: 22
+Processed article IDs: 50
+Checkpoint recovery completed.
+
+========== STEP 2: READ BRONZE ==========
+
+========== INCREMENTAL FILE CHECK ==========
+Total Bronze files: 6
+Previously processed files: 22
+New files to process: 1
+NEW: news_20261122T183624211207Z_798c195a.parquet
+SKIPPED: news_20261118T062018498715Z_0678ba20.parquet
+SKIPPED: news_20261118T062018665286Z_11170060.parquet
+SKIPPED: news_20261119T065518299142Z_85c25b66.parquet
+SKIPPED: news_20261119T065518393195Z_2af22eaa.parquet
+SKIPPED: news_20261119T095022765784Z_c9fb2cfe.parquet
+
+Reading: news_20261122T183624211207Z_798c195a.parquet
+Records in file: 1
+
+Total new Bronze records: 1
+New Bronze files: 1
+ - news_20261122T183624211207Z_798c195a.parquet
+
+Batch ID: batch_5161d9b8e7d00154
+
+========== STEP 3: EXACT DEDUPLICATION ==========
+
+========== ARTICLE-LEVEL DEDUPLICATION ==========
+Previously processed article IDs: 50
+
+Exact article-level deduplication transformations prepared.
+Previously processed IDs: 50
+Article-level deduplication completed!
+Records proceeding to validation: 1                                             
+
+========== STEP 4: VALIDATION ==========
+
+========== STARTING NEWS VALIDATION ==========
+
+Validation transformations completed; valid and invalid records are separated.
+Valid articles: 1
+Invalid articles: 0
+
+========== STEP 5: HTML CLEANING ==========
+
+========== STARTING HTML CLEANING ==========
+HTML cleaning completed.
+
+========== STEP 6: TICKER EXTRACTION ==========
+
+========== STARTING TICKER EXTRACTION ==========
+Number of companies loaded: 13
+Ticker extraction transformations prepared.
+
+========== STEP 7: SEMANTIC DEDUPLICATION ==========
+
+========== SEMANTIC DEDUPLICATION ==========
+
+Loading historical Silver News...
+Reading historical file: part-00000.parquet
+Reading historical file: part-00000.parquet
+Reading historical file: part-00000.parquet
+Reading historical file: part-00000.parquet
+Reading historical file: part-00000.parquet
+Reading historical file: part-00000.parquet
+Reading historical file: part-00000.parquet
+Reading historical file: part-00000.parquet
+Historical articles loaded: 49
+
+Preparing semantic comparison candidates...
+
+UNIQUE ARTICLE: 6e531a79a4b54d65abc6a0686211b7e17bbf3a074d72e5eb3a9e9db0c48008ea
+
+========== SEMANTIC DEDUPLICATION SUMMARY ==========
+Incoming articles: 1
+Historical articles: 49
+Semantic comparisons performed: 0
+Semantic duplicates: 0
+Unique incoming articles: 1
+Similarity threshold: 0.9
+Time window: 24 hours
+
+Semantic deduplication completed!
+Articles after semantic deduplication: 1                                        
+Semantic duplicates detected: 0
+Unique article-ticker mappings: 1
+
+========== STEP 8: FINBERT SENTIMENT ==========
+
+========== STARTING FINBERT SENTIMENT ANALYSIS ==========
+Article records collected in 0.103 seconds
+Total unique articles: 1
+FinBERT already loaded; reusing the in-memory model.
+
+Starting FinBERT inference...
+FinBERT batch profile: 1 article(s) | tokenization=0.002s | model_inference=0.095s
+Processed 1/1 articles
+Ticker records collected in 0.271 seconds
+\n========== ARTICLE-LEVEL FINBERT RESULTS ==========
+Article ID       : 6e531a79a4b54d65abc6a0686211b7e17bbf3a074d72e5eb3a9e9db0c48008ea
+Headline         : APL Apollo To Buy Tata Steel's Tubes And Colors Business For Rs 28,000 Crore - NDTV Profit
+Matched tickers  : TATASTEEL
+Sentiment        : NEUTRAL
+Positive score   : 0.0876
+Negative score   : 0.0105
+Neutral score    : 0.9019
+Sentiment score  : 0.0771
+------------------------------------------------------------------------
+\n========== TICKER-LEVEL FINBERT RESULTS ==========
+Ticker             Sentiment           Score
+TATASTEEL          NEUTRAL            0.0771
+
+========================================
+FINBERT SENTIMENT ANALYSIS COMPLETED
+========================================
+Articles processed: 1
+Article-ticker records: 1
+
+Sentiment analysis completed successfully.
+
+========== STEP 9: WRITE OUTPUTS + AUDIT ==========
+
+========== SAFE BATCH WRITING ==========
+
+Writing article-level Silver data...
+
+Writing Parquet using PyArrow...
+Records to write: 1                                                             
+Parquet file written: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\_staging\batch_5161d9b8e7d00154\news\part-00000.parquet
+
+Writing ticker-level Silver data...
+
+Writing Parquet using PyArrow...
+Records to write: 1                                                             
+Parquet file written: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\_staging\batch_5161d9b8e7d00154\news_by_ticker\part-00000.parquet
+
+Writing DLQ records...
+
+Writing Parquet using PyArrow...
+Records to write: 0
+Parquet file written: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\_staging\batch_5161d9b8e7d00154\dead_letter\part-00000.parquet
+
+No semantic duplicates found; audit writing skipped.
+Commit marker created: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\checkpoints\committed_batches\batch_5161d9b8e7d00154.json
+
+========================================
+BATCH COMMITTED SUCCESSFULLY
+========================================
+Batch ID: batch_5161d9b8e7d00154
+Bronze files: 1
+Article IDs: 1
+News output: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\silver\news\batch_id=batch_5161d9b8e7d00154
+Ticker output: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\silver\news_by_ticker\batch_id=batch_5161d9b8e7d00154
+DLQ output: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\processed\dead_letter\batch_id=batch_5161d9b8e7d00154
+
+========== STEP 10: UPDATE CHECKPOINTS ==========
+Historical cache updated with committed articles: 1
+Checkpoint files updated successfully.
+
+================================================
+          SILVER NEWS BATCH COMPLETED
+================================================
+Batch ID: batch_5161d9b8e7d00154
+Bronze files processed: 1
+Articles considered: 1
+Valid articles: 1
+Invalid articles: 0
+Semantic duplicates: 0
+Unique articles: 1
+Article IDs checkpointed: 1
+
+========== EXECUTION TIME SUMMARY ==========
+Checkpoint Recovery           :      0.01 seconds
+Read Bronze                   :      4.37 seconds
+Exact Deduplication           :      0.35 seconds
+Collect candidate IDs         :      8.91 seconds
+Validation                    :      0.24 seconds
+Valid record count action     :      0.78 seconds
+Invalid record count action   :      0.44 seconds
+HTML Cleaning                 :      0.22 seconds
+Ticker Extraction             :      0.16 seconds
+Semantic Deduplication        :      0.62 seconds
+Unique article count action   :      0.32 seconds
+Duplicate audit count action  :      3.17 seconds
+Ticker mapping count action   :      0.74 seconds
+FinBERT Inference             :      0.56 seconds
+Write Silver + DLQ + Audit    :     10.04 seconds
+Update Historical Cache       :      0.08 seconds
+TOTAL BATCH TIME              :     33.29 seconds
+============================================
+Spark session stopped. Silver service shut down.
+SUCCESS: The process with PID 19392 (child process of PID 22184) has been terminated.
+SUCCESS: The process with PID 22184 (child process of PID 24548) has been terminated.
+SUCCESS: The process with PID 24548 (child process of PID 28128) has been terminated.
+(.venv) PS C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\src> python run_silver_pipeline.py --once
+
+================================================
+       STARTING SILVER NEWS PIPELINE SERVICE
+================================================
+Bronze folder: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\news_bronze\shared_data\bronze\new_news_update
+Mode: ONE-TIME
+WARNING: Using incubator modules: jdk.incubator.vector
+26/11/23 12:37:57 WARN Shell: Did not find winutils.exe: java.io.FileNotFoundException: java.io.FileNotFoundException: HADOOP_HOME and hadoop.home.dir are unset. -see https://cwiki.apache.org/confluence/display/HADOOP2/WindowsProblems
+Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+26/11/23 12:37:57 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+Spark local worker count: 2 (limited to reduce Windows worker/socket overhead)
+
+========== SERVICE MODEL INITIALIZATION ==========
+
+Loading local semantic embedding model...
+Loading weights: 100%|██████████████████████████████████████| 103/103 [00:00<00:00, 1977.11it/s]
+Embedding model loaded successfully.
+
+========== LOADING FINBERT ==========
+Using device: cpu
+Tokenizer loaded successfully.
+Loading weights: 100%|███████████████████████████████████████| 201/201 [00:00<00:00, 551.11it/s]
+FinBERT model loaded successfully!
+
+Model sentiment labels:
+{'positive': 0, 'negative': 1, 'neutral': 2}
+Model initialization completed in 1.17 seconds
+
+========== CHECKPOINT RECOVERY ==========
+Committed batches recovered: 9
+Processed Bronze files: 23
+Processed article IDs: 51
+Checkpoint recovery completed.
+
+
+================================================
+          STARTING SILVER NEWS BATCH
+================================================
+
+========== STEP 1: CHECKPOINT RECOVERY ==========
+
+========== CHECKPOINT RECOVERY ==========
+Committed batches recovered: 9
+Processed Bronze files: 23
+Processed article IDs: 51
+Checkpoint recovery completed.
+
+========== STEP 2: READ BRONZE ==========
+
+========== INCREMENTAL FILE CHECK ==========
+Total Bronze files: 7
+Previously processed files: 23
+New files to process: 1
+NEW: news_20261123T062127085026Z_d0eceb64.parquet
+SKIPPED: news_20261118T062018498715Z_0678ba20.parquet
+SKIPPED: news_20261118T062018665286Z_11170060.parquet
+SKIPPED: news_20261119T065518299142Z_85c25b66.parquet
+SKIPPED: news_20261119T065518393195Z_2af22eaa.parquet
+SKIPPED: news_20261119T095022765784Z_c9fb2cfe.parquet
+SKIPPED: news_20261122T183624211207Z_798c195a.parquet
+
+Reading: news_20261123T062127085026Z_d0eceb64.parquet
+Records in file: 1
+
+Total new Bronze records: 1
+New Bronze files: 1
+ - news_20261123T062127085026Z_d0eceb64.parquet
+
+Batch ID: batch_3ee6de3ba9bb9a65
+
+========== STEP 3: EXACT DEDUPLICATION ==========
+
+========== ARTICLE-LEVEL DEDUPLICATION ==========
+Previously processed article IDs: 51
+
+Exact article-level deduplication transformations prepared.
+Previously processed IDs: 51
+Article-level deduplication completed!
+Records proceeding to validation: 1                                             
+
+========== STEP 4: VALIDATION ==========
+
+========== STARTING NEWS VALIDATION ==========
+
+Validation transformations completed; valid and invalid records are separated.
+Valid articles: 1
+Invalid articles: 0
+
+========== STEP 5: HTML CLEANING ==========
+
+========== STARTING HTML CLEANING ==========
+HTML cleaning completed.
+
+========== STEP 6: TICKER EXTRACTION ==========
+
+========== STARTING TICKER EXTRACTION ==========
+Number of companies loaded: 13
+Ticker extraction transformations prepared.
+
+========== STEP 7: SEMANTIC DEDUPLICATION ==========
+
+========== SEMANTIC DEDUPLICATION ==========
+
+Loading historical Silver News...
+Reading historical file: part-00000.parquet
+Reading historical file: part-00000.parquet
+Reading historical file: part-00000.parquet
+Reading historical file: part-00000.parquet
+Reading historical file: part-00000.parquet
+Reading historical file: part-00000.parquet
+Reading historical file: part-00000.parquet
+Reading historical file: part-00000.parquet
+Reading historical file: part-00000.parquet
+Historical articles loaded: 50
+
+Preparing semantic comparison candidates...
+Comparing 56aada9705765e4794ec70c2b3b80f8c3b3d67c2ffcb21227912835a2c26cc6a with 6e531a79a4b54d65abc6a0686211b7e17bbf3a074d72e5eb3a9e9db0c48008ea: 0.7356
+
+UNIQUE ARTICLE: 56aada9705765e4794ec70c2b3b80f8c3b3d67c2ffcb21227912835a2c26cc6a
+
+========== SEMANTIC DEDUPLICATION SUMMARY ==========
+Incoming articles: 1
+Historical articles: 50
+Semantic comparisons performed: 1
+Semantic duplicates: 0
+Unique incoming articles: 1
+Similarity threshold: 0.9
+Time window: 24 hours
+
+Semantic deduplication completed!
+Articles after semantic deduplication: 1                                        
+Semantic duplicates detected: 0
+Unique article-ticker mappings: 1
+
+========== STEP 8: FINBERT SENTIMENT ==========
+
+========== STARTING FINBERT SENTIMENT ANALYSIS ==========
+Article records collected in 0.113 seconds
+Total unique articles: 1
+FinBERT already loaded; reusing the in-memory model.
+
+Starting FinBERT inference...
+FinBERT batch profile: 1 article(s) | tokenization=0.001s | model_inference=0.132s
+Processed 1/1 articles
+Ticker records collected in 0.218 seconds
+\n========== ARTICLE-LEVEL FINBERT RESULTS ==========
+Article ID       : 56aada9705765e4794ec70c2b3b80f8c3b3d67c2ffcb21227912835a2c26cc6a
+Headline         : Tata Steel's ₹28,000 Crore APL Apollo Deal Explained: Who Benefits From This Mega Acquisition? - Business Today
+Matched tickers  : TATASTEEL
+Sentiment        : NEUTRAL
+Positive score   : 0.0979
+Negative score   : 0.0095
+Neutral score    : 0.8926
+Sentiment score  : 0.0884
+------------------------------------------------------------------------
+\n========== TICKER-LEVEL FINBERT RESULTS ==========
+Ticker             Sentiment           Score
+TATASTEEL          NEUTRAL            0.0884
+
+========================================
+FINBERT SENTIMENT ANALYSIS COMPLETED
+========================================
+Articles processed: 1
+Article-ticker records: 1
+
+Sentiment analysis completed successfully.
+
+========== STEP 9: WRITE OUTPUTS + AUDIT ==========
+
+========== SAFE BATCH WRITING ==========
+
+Writing article-level Silver data...
+
+Writing Parquet using PyArrow...
+Records to write: 1                                                             
+Parquet file written: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\_staging\batch_3ee6de3ba9bb9a65\news\part-00000.parquet
+
+Writing ticker-level Silver data...
+
+Writing Parquet using PyArrow...
+Records to write: 1                                                             
+Parquet file written: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\_staging\batch_3ee6de3ba9bb9a65\news_by_ticker\part-00000.parquet
+
+Writing DLQ records...
+
+Writing Parquet using PyArrow...
+Records to write: 0
+Parquet file written: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\_staging\batch_3ee6de3ba9bb9a65\dead_letter\part-00000.parquet
+
+No semantic duplicates found; audit writing skipped.
+Commit marker created: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\checkpoints\committed_batches\batch_3ee6de3ba9bb9a65.json
+
+========================================
+BATCH COMMITTED SUCCESSFULLY
+========================================
+Batch ID: batch_3ee6de3ba9bb9a65
+Bronze files: 1
+Article IDs: 1
+News output: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\silver\news\batch_id=batch_3ee6de3ba9bb9a65
+Ticker output: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\silver\news_by_ticker\batch_id=batch_3ee6de3ba9bb9a65
+DLQ output: C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\data\processed\dead_letter\batch_id=batch_3ee6de3ba9bb9a65
+
+========== STEP 10: UPDATE CHECKPOINTS ==========
+Historical cache updated with committed articles: 1
+Checkpoint files updated successfully.
+
+================================================
+          SILVER NEWS BATCH COMPLETED
+================================================
+Batch ID: batch_3ee6de3ba9bb9a65
+Bronze files processed: 1
+Articles considered: 1
+Valid articles: 1
+Invalid articles: 0
+Semantic duplicates: 0
+Unique articles: 1
+Article IDs checkpointed: 1
+
+========== EXECUTION TIME SUMMARY ==========
+Checkpoint Recovery           :      0.01 seconds
+Read Bronze                   :      3.69 seconds
+Exact Deduplication           :      0.32 seconds
+Collect candidate IDs         :      8.76 seconds
+Validation                    :      0.22 seconds
+Valid record count action     :      0.73 seconds
+Invalid record count action   :      0.43 seconds
+HTML Cleaning                 :      0.20 seconds
+Ticker Extraction             :      0.17 seconds
+Semantic Deduplication        :      0.85 seconds
+Unique article count action   :      0.33 seconds
+Duplicate audit count action  :      3.01 seconds
+Ticker mapping count action   :      0.73 seconds
+FinBERT Inference             :      0.53 seconds
+Write Silver + DLQ + Audit    :      8.15 seconds
+Update Historical Cache       :      0.10 seconds
+TOTAL BATCH TIME              :     30.22 seconds
+============================================
+Spark session stopped. Silver service shut down.
+SUCCESS: The process with PID 10408 (child process of PID 27784) has been terminated.
+SUCCESS: The process with PID 27784 (child process of PID 15912) has been terminated.
+SUCCESS: The process with PID 15912 (child process of PID 33640) has been terminated.
 (.venv) PS C:\Users\2000209448\Documents\FinTel_FINAL_With_Cosine\silver_news\src> python run_silver_pipeline.py --once
 
 ================================================
