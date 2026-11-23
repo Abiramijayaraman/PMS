@@ -44,8 +44,9 @@ EMBEDDING_MODEL_NAME = str(
     PROJECT_ROOT / "silver_news" / "models" / "all-MiniLM-L6-v2"
 )
 
-SIMILARITY_THRESHOLD = 0.90
-
+# Three-zone semantic duplicate policy.
+HIGH_CONFIDENCE_DUPLICATE = 0.85
+MIDDLE_ZONE_MINIMUM = 0.70
 TIME_WINDOW_HOURS = 24
 
 # Model is loaded only once and reused.
@@ -209,6 +210,43 @@ def get_article_tickers(article):
         for ticker in tickers
         if ticker
     }
+
+
+# ==================================================
+# 7. EVENT-CONTEXT CHECK FOR MIDDLE-ZONE SIMILARITY
+# ==================================================
+
+_EVENT_STOPWORDS = {
+    "a", "an", "the", "and", "or", "but", "to", "from", "for", "of", "in", "on",
+    "at", "by", "with", "as", "is", "are", "was", "were", "be", "been", "being",
+    "this", "that", "these", "those", "who", "what", "why", "how", "will", "would",
+    "could", "should", "can", "may", "might", "after", "before", "over", "under",
+    "into", "about", "explained", "explain", "benefits", "benefit", "impact", "weighs",
+    "shares", "share", "stock", "stocks", "market", "markets", "today", "latest", "more",
+}
+
+
+
+def extract_event_context_tokens(article_text):
+    """Extract headline terms and numeric values for a lightweight event-context check."""
+    import re
+    text = str(article_text or "").lower().replace(",", "")
+    # Preserve useful deal values while normalizing currency formatting.
+    tokens = set(re.findall(r"[a-z]{3,}|\d+(?:\.\d+)?", text))
+    return tokens - _EVENT_STOPWORDS
+
+
+
+
+def has_shared_event_context(incoming_text, candidate_text):
+    """Require overlap in meaningful headline terms for middle-zone duplicate decisions."""
+    incoming_tokens = extract_event_context_tokens(incoming_text)
+    candidate_tokens = extract_event_context_tokens(candidate_text)
+    shared = incoming_tokens.intersection(candidate_tokens)
+    # Shared amount/value is strong evidence; otherwise require at least 2 meaningful terms.
+    shared_numbers = {token for token in shared if token.isdigit()}
+    shared_words = {token for token in shared if not token.isdigit()}
+    return bool(shared_numbers) or len(shared_words) >= 2, sorted(shared)
 
 
 # ==================================================
@@ -551,71 +589,65 @@ def semantic_deduplicate_news(
                 best_match = candidate
 
         # --------------------------------------------------
-        # IDENTIFY DUPLICATE
+        # IDENTIFY DUPLICATE USING THREE-ZONE POLICY
         # --------------------------------------------------
 
-        if (
-            best_match is not None
-            and best_similarity >= SIMILARITY_THRESHOLD
-        ):
+        duplicate_decision = False
+        decision_threshold = None
+        decision_reason = ""
+        shared_context_tokens = []
 
-            canonical_id = best_match.get(
-                "article_id"
+        if best_match is not None and best_similarity >= HIGH_CONFIDENCE_DUPLICATE:
+            duplicate_decision = True
+            decision_threshold = HIGH_CONFIDENCE_DUPLICATE
+            decision_reason = (
+                "High-confidence semantic duplicate: shared ticker, within 24-hour window, "
+                "and cosine similarity >= 0.85"
             )
-
-            print(
-                "\nSEMANTIC DUPLICATE DETECTED:",
-                article_id
+        elif best_match is not None and MIDDLE_ZONE_MINIMUM <= best_similarity < HIGH_CONFIDENCE_DUPLICATE:
+            context_match, shared_context_tokens = has_shared_event_context(
+                incoming_text, get_article_text(best_match)
             )
+            if context_match:
+                duplicate_decision = True
+                decision_threshold = MIDDLE_ZONE_MINIMUM
+                decision_reason = (
+                    "Middle-zone event duplicate: shared ticker, within 24-hour window, "
+                    "cosine similarity 0.70-0.85, and shared event-context terms: "
+                    + ", ".join(shared_context_tokens)
+                )
+            else:
+                print("Middle-zone similarity, but event context did not match; retaining article.")
 
-            print(
-                "Canonical article:",
-                canonical_id
-            )
+        if duplicate_decision:
 
-            print(
-                "Similarity:",
-                round(best_similarity, 4)
-            )
+            canonical_id = best_match.get("article_id")
 
+            print("\nSEMANTIC DUPLICATE DETECTED:", article_id)
+            print("Canonical article:", canonical_id)
+            print("Similarity:", round(best_similarity, 4))
+            print("Duplicate headline:", incoming_text)
+            print("Canonical headline:", get_article_text(best_match))
             matched_tickers = sorted(
                 incoming_tickers.intersection(get_article_tickers(best_match))
             )
-            print("Duplicate headline:", incoming_text)
-            print("Canonical headline:", get_article_text(best_match))
             print("Matched ticker(s):", ", ".join(matched_tickers))
-            print("Reason: shared ticker, within 24 hours, similarity >=", SIMILARITY_THRESHOLD)
+            print("Reason:", decision_reason)
 
             duplicate_ids.add(article_id)
 
             duplicate_records.append({
-
                 "duplicate_article_id": article_id,
-
                 "canonical_article_id": canonical_id,
-
                 "duplicate_source": incoming.get("source"),
-
                 "canonical_source": best_match.get("source"),
-
                 "duplicate_headline": incoming_text,
-
-                "canonical_headline": get_article_text(
-                    best_match
-                ),
-
-                "matched_tickers": ", ".join(
-                    sorted(
-                        incoming_tickers.intersection(
-                            get_article_tickers(best_match)
-                        )
-                    )
-                ),
-
+                "canonical_headline": get_article_text(best_match),
+                "matched_tickers": ", ".join(matched_tickers),
                 "similarity_score": best_similarity,
-                "similarity_threshold": SIMILARITY_THRESHOLD,
+                "similarity_threshold": decision_threshold,
                 "time_window_hours": TIME_WINDOW_HOURS,
-                "duplicate_reason": "Same ticker within 24-hour window and cosine similarity at or above threshold",
+                "duplicate_reason": decision_reason,
                 "detected_at_utc": datetime.now(timezone.utc).isoformat()
             })
 
@@ -717,8 +749,8 @@ def semantic_deduplicate_news(
     )
 
     print(
-        "Similarity threshold:",
-        SIMILARITY_THRESHOLD
+        "High-confidence duplicate threshold:",
+        HIGH_CONFIDENCE_DUPLICATE
     )
 
     print(
