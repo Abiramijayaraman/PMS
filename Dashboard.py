@@ -1,4 +1,3 @@
-
 import os
 import html
 
@@ -8,9 +7,9 @@ import psycopg2
 import streamlit as st
 from dotenv import load_dotenv
 
-# ==========================================================
+# ============================================================
 # 1. CONFIGURATION
-# ==========================================================
+# ============================================================
 
 load_dotenv()
 
@@ -28,93 +27,132 @@ DB_CONFIG = {
     "password": os.getenv("PG_PASSWORD", ""),
 }
 
+# Actual Gold schema
 SCHEMA = "fintel_gold"
 
-# ==========================================================
-# 2. CUSTOM STYLING
-# ==========================================================
+# ============================================================
+# 2. LIGHT THEME CSS
+# ============================================================
 
 st.markdown(
     """
     <style>
+    /* Entire application */
     .stApp {
-        background-color: #0b1120;
-        color: #e5e7eb;
+        background-color: #f5f7fb;
+        color: #172033;
     }
 
     [data-testid="stHeader"] {
-        background: rgba(11, 17, 32, 0);
+        background-color: #f5f7fb;
     }
 
+    [data-testid="stToolbar"] {
+        background-color: transparent;
+    }
+
+    /* Main content */
+    [data-testid="stMainBlockContainer"] {
+        padding-top: 1.5rem;
+    }
+
+    /* Headings */
+    h1, h2, h3, h4 {
+        color: #14233b !important;
+    }
+
+    /* KPI metric cards */
     [data-testid="stMetric"] {
-        background-color: #151e30;
-        border: 1px solid #26334a;
-        padding: 18px;
-        border-radius: 12px;
+        background-color: #ffffff;
+        border: 1px solid #e3e9f2;
+        padding: 18px 20px;
+        border-radius: 14px;
+        box-shadow: 0 2px 8px rgba(25, 45, 75, 0.04);
     }
 
     [data-testid="stMetricLabel"] {
-        color: #a8b4c8;
+        color: #64748b !important;
     }
 
     [data-testid="stMetricValue"] {
-        color: #f8fafc;
+        color: #172033 !important;
     }
 
+    [data-testid="stMetricDelta"] {
+        font-weight: 600;
+    }
+
+    /* Tables */
     [data-testid="stDataFrame"] {
-        border: 1px solid #26334a;
+        background-color: #ffffff;
+        border: 1px solid #e3e9f2;
+        border-radius: 12px;
+    }
+
+    /* Select boxes */
+    [data-testid="stSelectbox"] {
+        background-color: #ffffff;
+    }
+
+    /* News cards */
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        background-color: #ffffff;
+        border-color: #e3e9f2 !important;
+        border-radius: 12px;
+    }
+
+    /* Buttons */
+    .stButton > button {
+        border-radius: 9px;
+        border: 1px solid #d9e2ef;
+        background-color: #ffffff;
+        color: #1d3557;
+        font-weight: 600;
+    }
+
+    .stButton > button:hover {
+        border-color: #3b82f6;
+        color: #2563eb;
+    }
+
+    /* Dividers */
+    hr {
+        border-color: #e3e9f2 !important;
+    }
+
+    /* Captions */
+    [data-testid="stCaptionContainer"] {
+        color: #64748b;
+    }
+
+    /* Alerts */
+    [data-testid="stAlert"] {
         border-radius: 10px;
     }
 
-    .section-title {
-        font-size: 19px;
-        font-weight: 650;
-        color: #f1f5f9;
-        margin-top: 8px;
-        margin-bottom: 12px;
-    }
-
-    .news-card {
-        background-color: #151e30;
-        border: 1px solid #26334a;
-        border-radius: 12px;
-        padding: 14px;
-        margin-bottom: 10px;
-    }
-
-    .news-headline {
-        font-size: 14px;
-        font-weight: 600;
-        color: #e5e7eb;
-    }
-
-    .news-meta {
-        font-size: 12px;
-        color: #94a3b8;
-        margin-top: 8px;
-    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# ==========================================================
+# ============================================================
 # 3. POSTGRESQL CONNECTION
-# ==========================================================
+# ============================================================
 
 def get_connection():
     """Create a PostgreSQL connection."""
 
-    if not DB_CONFIG["database"] or not DB_CONFIG["password"]:
-        raise ValueError(
-            "Set PG_DATABASE and PG_PASSWORD in your .env file."
-        )
+    if not DB_CONFIG["database"]:
+        raise ValueError("PG_DATABASE is missing from your .env file.")
+
+    if not DB_CONFIG["password"]:
+        raise ValueError("PG_PASSWORD is missing from your .env file.")
 
     return psycopg2.connect(**DB_CONFIG)
 
 
 def fetch_data(query, params=None):
-    """Execute SQL and return a DataFrame."""
+    """Execute SQL query and return the result as a DataFrame."""
 
     conn = get_connection()
 
@@ -124,9 +162,9 @@ def fetch_data(query, params=None):
         conn.close()
 
 
-# ==========================================================
+# ============================================================
 # 4. LOAD GOLD TABLES
-# ==========================================================
+# ============================================================
 
 @st.cache_data(ttl=15)
 def load_stock_metrics():
@@ -187,24 +225,32 @@ def load_alerts():
     return fetch_data(query)
 
 
-# ==========================================================
+# ============================================================
 # 5. HELPER FUNCTIONS
-# ==========================================================
+# ============================================================
 
 def format_number(value, decimals=2):
-    if pd.isna(value):
+    if value is None or pd.isna(value):
         return "—"
-    return f"{value:,.{decimals}f}"
+
+    try:
+        return f"{float(value):,.{decimals}f}"
+    except (ValueError, TypeError):
+        return "—"
 
 
 def format_percentage(value):
-    if pd.isna(value):
+    if value is None or pd.isna(value):
         return "—"
-    return f"{value:+.2f}%"
+
+    try:
+        return f"{float(value):+.2f}%"
+    except (ValueError, TypeError):
+        return "—"
 
 
 def format_timestamp(value):
-    if pd.isna(value):
+    if value is None or pd.isna(value):
         return "—"
 
     try:
@@ -214,7 +260,7 @@ def format_timestamp(value):
 
 
 def latest_per_symbol(df):
-    """Return the most recent window per stock."""
+    """Return latest window for each symbol."""
 
     if df.empty:
         return df
@@ -226,9 +272,15 @@ def latest_per_symbol(df):
     )
 
 
-# ==========================================================
+def safe_value(value, default="—"):
+    if value is None or pd.isna(value):
+        return default
+    return str(value)
+
+
+# ============================================================
 # 6. LOAD DATA
-# ==========================================================
+# ============================================================
 
 try:
     stock_df = load_stock_metrics()
@@ -238,43 +290,42 @@ try:
 
 except Exception as e:
     st.error("Unable to connect to PostgreSQL or load Gold data.")
-    st.code(str(e))
-    st.info(
-        "Check PostgreSQL status, database credentials, "
-        "schema names and table names."
+
+    st.warning(
+        "Please check your PostgreSQL service, .env credentials, "
+        "database name, schema, and table names."
     )
+
+    with st.expander("View technical error"):
+        st.code(str(e))
+
     st.stop()
 
 
-# ==========================================================
+# ============================================================
 # 7. HEADER
-# ==========================================================
+# ============================================================
 
-header_col1, header_col2 = st.columns([5, 1])
+header_left, header_right = st.columns([5, 1])
 
-with header_col1:
-    st.markdown(
-        """
-        <h1 style="margin-bottom:0; color:#f8fafc;">
-            📈 FinPulse
-        </h1>
-        <p style="color:#94a3b8; margin-top:0;">
-            Financial Intelligence & Real-Time Market Sentiment
-        </p>
-        """,
-        unsafe_allow_html=True,
-    )
+with header_left:
+    st.title("📈 FinPulse")
+    st.caption("Financial Intelligence & Real-Time Market Sentiment")
 
-with header_col2:
+with header_right:
+    st.write("")
+    st.write("")
+
     if st.button("🔄 Refresh Data", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
 st.divider()
 
-# ==========================================================
-# 8. FILTERS
-# ==========================================================
+
+# ============================================================
+# 8. STOCK FILTERS
+# ============================================================
 
 all_symbols = sorted(
     set(stock_df["symbol"].dropna().tolist())
@@ -283,18 +334,23 @@ all_symbols = sorted(
     | set(alerts_df["symbol"].dropna().tolist())
 )
 
-filter_col1, filter_col2 = st.columns(2)
+filter_col1, filter_col2 = st.columns([1, 1])
 
 with filter_col1:
     selected_symbol = st.selectbox(
-        "Select Stock",
-        ["ALL"] + all_symbols,
+        "Stock Symbol",
+        options=["ALL"] + all_symbols,
     )
 
 with filter_col2:
     chart_window_option = st.selectbox(
         "Chart History",
-        ["20 windows", "50 windows", "100 windows", "All windows"],
+        options=[
+            "20 windows",
+            "50 windows",
+            "100 windows",
+            "All windows",
+        ],
         index=1,
     )
 
@@ -307,14 +363,18 @@ chart_limits = {
 
 chart_limit = chart_limits[chart_window_option]
 
-# Apply stock filters
+
+# Apply symbol filtering
 
 if selected_symbol == "ALL":
+
     filtered_stock = stock_df.copy()
     filtered_sentiment = sentiment_df.copy()
     filtered_news = news_df.copy()
     filtered_alerts = alerts_df.copy()
+
 else:
+
     filtered_stock = stock_df[
         stock_df["symbol"] == selected_symbol
     ].copy()
@@ -331,25 +391,30 @@ else:
         alerts_df["symbol"] == selected_symbol
     ].copy()
 
-# ==========================================================
-# 9. KPI CALCULATIONS
-# ==========================================================
 
-# Count unique articles from individual Gold news records.
+# ============================================================
+# 9. KPI CALCULATIONS
+# ============================================================
+
+# Unique news article count from individual Gold news records.
 total_articles = filtered_news["article_id"].nunique()
 
-# Observed unique symbols across Gold data.
+# Observed unique symbols from Gold.
+# This is not the configured watchlist count.
 tracked_stocks = len(all_symbols)
 
-# Average latest sentiment window per symbol.
+# Average latest sentiment per symbol.
 latest_sentiment = latest_per_symbol(filtered_sentiment)
 
-if not latest_sentiment.empty:
+if (
+    not latest_sentiment.empty
+    and latest_sentiment["avg_sentiment"].notna().any()
+):
     avg_market_sentiment = latest_sentiment["avg_sentiment"].mean()
 else:
     avg_market_sentiment = None
 
-# Alert records in Gold.
+# Alert records from Gold alerts table.
 alert_record_count = len(filtered_alerts)
 
 # Last news processing timestamp.
@@ -361,7 +426,7 @@ if (
 else:
     last_news_update = None
 
-# Last market metrics timestamp.
+# Last stock metric calculation timestamp.
 if (
     not filtered_stock.empty
     and filtered_stock["computed_at"].notna().any()
@@ -370,63 +435,65 @@ if (
 else:
     last_market_update = None
 
-# ==========================================================
-# 10. MARKET OVERVIEW KPI CARDS
-# ==========================================================
 
-st.markdown(
-    '<div class="section-title">Market Overview</div>',
-    unsafe_allow_html=True,
-)
+# ============================================================
+# 10. MARKET OVERVIEW
+# ============================================================
+
+st.subheader("Market Overview")
 
 kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 
-kpi1.metric(
-    "📰 News Articles",
-    f"{total_articles:,}",
-)
+with kpi1:
+    st.metric(
+        label="📰 News Articles",
+        value=f"{total_articles:,}",
+    )
 
-kpi2.metric(
-    "📊 Stocks Tracked",
-    f"{tracked_stocks:,}",
-)
+with kpi2:
+    st.metric(
+        label="📊 Stocks Tracked",
+        value=f"{tracked_stocks:,}",
+    )
 
-kpi3.metric(
-    "🧠 Average Sentiment",
-    format_number(avg_market_sentiment, 3)
-    if avg_market_sentiment is not None
-    else "—",
-)
+with kpi3:
+    st.metric(
+        label="🧠 Average Sentiment",
+        value=(
+            format_number(avg_market_sentiment, 3)
+            if avg_market_sentiment is not None
+            else "—"
+        ),
+    )
 
-kpi4.metric(
-    "🚨 Alert Records",
-    f"{alert_record_count:,}",
-)
+with kpi4:
+    st.metric(
+        label="🚨 Alert Records",
+        value=f"{alert_record_count:,}",
+    )
+
 
 # Data freshness
+freshness_col1, freshness_col2 = st.columns(2)
 
-fresh_col1, fresh_col2 = st.columns(2)
-
-with fresh_col1:
+with freshness_col1:
     st.caption(
         f"📰 Last News Update: {format_timestamp(last_news_update)}"
     )
 
-with fresh_col2:
+with freshness_col2:
     st.caption(
         f"📈 Last Market Update: {format_timestamp(last_market_update)}"
     )
 
 st.divider()
 
-# ==========================================================
-# 11. STOCK SNAPSHOT
-# ==========================================================
 
-st.markdown(
-    '<div class="section-title">📊 Stock Snapshot</div>',
-    unsafe_allow_html=True,
-)
+# ============================================================
+# 11. STOCK SNAPSHOT
+# ============================================================
+
+st.subheader("📊 Stock Snapshot")
 
 latest_stock = latest_per_symbol(filtered_stock)
 
@@ -465,18 +532,16 @@ if not latest_stock.empty:
         use_container_width=True,
         hide_index=True,
     )
+
 else:
-    st.info("No stock metrics available.")
+    st.info("No stock metrics are available for this selection.")
 
 
-# ==========================================================
+# ============================================================
 # 12. SENTIMENT BY STOCK
-# ==========================================================
+# ============================================================
 
-st.markdown(
-    '<div class="section-title">🧠 Sentiment by Stock</div>',
-    unsafe_allow_html=True,
-)
+st.subheader("🧠 Sentiment by Stock")
 
 latest_sentiment_table = latest_per_symbol(filtered_sentiment)
 
@@ -526,18 +591,17 @@ if not latest_sentiment_table.empty:
     )
 
 else:
-    st.info("No sentiment data available.")
+    st.info("No sentiment records are available.")
+
 
 st.divider()
 
-# ==========================================================
-# 13. SENTIMENT VS PRICE MOVEMENT
-# ==========================================================
 
-st.markdown(
-    '<div class="section-title">📉 Sentiment vs Price Movement</div>',
-    unsafe_allow_html=True,
-)
+# ============================================================
+# 13. SENTIMENT VS PRICE MOVEMENT
+# ============================================================
+
+st.subheader("📉 Sentiment vs Price Movement")
 
 if not filtered_sentiment.empty:
 
@@ -545,107 +609,130 @@ if not filtered_sentiment.empty:
         filtered_sentiment["symbol"].dropna().unique()
     )
 
-    if selected_symbol == "ALL":
+    if selected_symbol == "ALL" and chart_symbols:
+
         chart_symbol = st.selectbox(
-            "Choose stock for historical analysis",
+            "Select stock for chart",
             chart_symbols,
             key="chart_symbol",
         )
-    else:
+
+    elif chart_symbols:
         chart_symbol = selected_symbol
 
-    chart_df = filtered_sentiment[
-        filtered_sentiment["symbol"] == chart_symbol
-    ].copy()
-
-    chart_df["window_start"] = pd.to_datetime(
-        chart_df["window_start"]
-    )
-
-    chart_df = chart_df.sort_values("window_start")
-
-    if chart_limit is not None:
-        chart_df = chart_df.tail(chart_limit)
-
-    if not chart_df.empty:
-
-        fig = go.Figure()
-
-        # Sentiment series
-        fig.add_trace(
-            go.Scatter(
-                x=chart_df["window_start"],
-                y=chart_df["avg_sentiment"],
-                name="Sentiment Score",
-                mode="lines+markers",
-                line=dict(width=2),
-                yaxis="y",
-                hovertemplate=(
-                    "Time: %{x}<br>"
-                    "Sentiment: %{y:.3f}<extra></extra>"
-                ),
-            )
-        )
-
-        # Price change series
-        fig.add_trace(
-            go.Scatter(
-                x=chart_df["window_start"],
-                y=chart_df["price_change_pct"],
-                name="Price Change %",
-                mode="lines",
-                line=dict(width=2, dash="dot"),
-                yaxis="y2",
-                hovertemplate=(
-                    "Time: %{x}<br>"
-                    "Price Change: %{y:.2f}%<extra></extra>"
-                ),
-            )
-        )
-
-        fig.update_layout(
-            height=420,
-            template="plotly_dark",
-            paper_bgcolor="#0b1120",
-            plot_bgcolor="#151e30",
-            margin=dict(l=10, r=10, t=35, b=10),
-            legend=dict(orientation="h", y=1.1),
-            xaxis=dict(
-                title="Window Start",
-                gridcolor="#26334a",
-            ),
-            yaxis=dict(
-                title="Sentiment Score",
-                range=[-1, 1],
-                gridcolor="#26334a",
-                zeroline=True,
-            ),
-            yaxis2=dict(
-                title="Price Change (%)",
-                overlaying="y",
-                side="right",
-                showgrid=False,
-            ),
-        )
-
-        st.plotly_chart(fig, use_container_width=True)
-
     else:
-        st.info("No historical chart data available.")
+        chart_symbol = None
+
+    if chart_symbol:
+
+        chart_df = filtered_sentiment[
+            filtered_sentiment["symbol"] == chart_symbol
+        ].copy()
+
+        chart_df["window_start"] = pd.to_datetime(
+            chart_df["window_start"]
+        )
+
+        chart_df = chart_df.sort_values("window_start")
+
+        if chart_limit is not None:
+            chart_df = chart_df.tail(chart_limit)
+
+        if not chart_df.empty:
+
+            fig = go.Figure()
+
+            # Sentiment line
+            fig.add_trace(
+                go.Scatter(
+                    x=chart_df["window_start"],
+                    y=chart_df["avg_sentiment"],
+                    name="Sentiment Score",
+                    mode="lines+markers",
+                    line=dict(width=2),
+                    yaxis="y",
+                    hovertemplate=(
+                        "Time: %{x}<br>"
+                        "Sentiment: %{y:.3f}"
+                        "<extra></extra>"
+                    ),
+                )
+            )
+
+            # Price movement line
+            fig.add_trace(
+                go.Scatter(
+                    x=chart_df["window_start"],
+                    y=chart_df["price_change_pct"],
+                    name="Price Change %",
+                    mode="lines",
+                    line=dict(width=2, dash="dot"),
+                    yaxis="y2",
+                    hovertemplate=(
+                        "Time: %{x}<br>"
+                        "Price Change: %{y:.2f}%"
+                        "<extra></extra>"
+                    ),
+                )
+            )
+
+            fig.update_layout(
+                height=420,
+                template="plotly_white",
+                paper_bgcolor="#ffffff",
+                plot_bgcolor="#ffffff",
+                font=dict(
+                    color="#172033",
+                ),
+                margin=dict(
+                    l=15,
+                    r=15,
+                    t=40,
+                    b=15,
+                ),
+                legend=dict(
+                    orientation="h",
+                    y=1.12,
+                ),
+                xaxis=dict(
+                    title="Window Start",
+                    gridcolor="#e8edf4",
+                ),
+                yaxis=dict(
+                    title="Sentiment Score",
+                    range=[-1, 1],
+                    gridcolor="#e8edf4",
+                    zeroline=True,
+                    zerolinecolor="#cbd5e1",
+                ),
+                yaxis2=dict(
+                    title="Price Change (%)",
+                    overlaying="y",
+                    side="right",
+                    showgrid=False,
+                ),
+            )
+
+            st.plotly_chart(
+                fig,
+                use_container_width=True,
+            )
+
+        else:
+            st.info("No historical chart data is available.")
 
 else:
-    st.info("No sentiment-price data available.")
+    st.info("No sentiment-price data is available.")
+
 
 st.divider()
 
-# ==========================================================
-# 14. LATEST FINANCIAL NEWS
-# ==========================================================
 
-st.markdown(
-    '<div class="section-title">📰 Latest Financial News</div>',
-    unsafe_allow_html=True,
-)
+# ============================================================
+# 14. LATEST FINANCIAL NEWS
+# ============================================================
+
+st.subheader("📰 Latest Financial News")
 
 if not filtered_news.empty:
 
@@ -663,62 +750,56 @@ if not filtered_news.empty:
 
     for _, row in latest_news_display.iterrows():
 
-        # Escape external text before rendering HTML.
-        headline = html.escape(
-            str(row.get("headline") or "No headline available")
+        # Convert null values to readable text.
+        headline = safe_value(
+            row.get("headline"),
+            "No headline available",
         )
 
-        symbol = html.escape(
-            str(row.get("symbol") or "N/A")
+        symbol = safe_value(
+            row.get("symbol"),
+            "N/A",
         )
 
-        source = html.escape(
-            str(row.get("source") or "Unknown source")
+        source = safe_value(
+            row.get("source"),
+            "Unknown source",
         )
 
-        sentiment = html.escape(
-            str(row.get("sentiment") or "Unknown")
+        sentiment = safe_value(
+            row.get("sentiment"),
+            "Unknown",
         )
 
         score = row.get("sentiment_score")
         score_text = format_number(score, 3)
         published = format_timestamp(row.get("published_at"))
 
-        st.markdown(
-            f"""
-            <div class="news-card">
-                <div class="news-headline">{headline}</div>
+        # Native Streamlit rendering: no raw HTML.
+        with st.container(border=True):
 
-                <div class="news-meta">
-                    <b>{symbol}</b> &nbsp;|&nbsp;
-                    {source} &nbsp;|&nbsp;
-                    {published}
-                </div>
+            st.text(headline)
 
-                <div class="news-meta">
-                    Sentiment: <b>{sentiment.upper()}</b>
-                    &nbsp;|&nbsp;
-                    Score: <b>{score_text}</b>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+            st.caption(
+                f"{symbol}  •  {source}  •  {published}"
+            )
+
+            st.caption(
+                f"Sentiment: {sentiment.upper()}  •  Score: {score_text}"
+            )
 
 else:
-    st.info("No news records available.")
+    st.info("No news records are available.")
 
 
 st.divider()
 
-# ==========================================================
-# 15. MARKET ALERTS
-# ==========================================================
 
-st.markdown(
-    '<div class="section-title">🚨 Market Alerts</div>',
-    unsafe_allow_html=True,
-)
+# ============================================================
+# 15. MARKET ALERTS
+# ============================================================
+
+st.subheader("🚨 Market Alerts")
 
 if not filtered_alerts.empty:
 
@@ -760,19 +841,16 @@ if not filtered_alerts.empty:
     )
 
 else:
-    st.success("No alert records available for this selection.")
+    st.success("No alert records for the selected stock.")
 
-# ==========================================================
+
+# ============================================================
 # 16. FOOTER
-# ==========================================================
+# ============================================================
 
-st.markdown(
-    """
-    <div style="text-align:center; color:#64748b; padding:20px;">
-        FinPulse Financial Intelligence Dashboard
-        <br>
-        Powered by Kafka • PySpark • PostgreSQL • Streamlit
-    </div>
-    """,
-    unsafe_allow_html=True,
+st.divider()
+
+st.caption(
+    "FinPulse Financial Intelligence Dashboard"
+    "  |  Kafka • PySpark • PostgreSQL • Streamlit"
 )
