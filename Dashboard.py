@@ -1,5 +1,5 @@
+
 import os
-import html
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -27,109 +27,114 @@ DB_CONFIG = {
     "password": os.getenv("PG_PASSWORD", ""),
 }
 
-# Actual Gold schema
-SCHEMA = "fintel_gold"
-
 # ============================================================
-# 2. LIGHT THEME CSS
+# 2. FORCE BRIGHT / LIGHT THEME (IN THIS FILE ONLY)
 # ============================================================
 
 st.markdown(
     """
     <style>
-    /* Entire application */
-    .stApp {
-        background-color: #f5f7fb;
-        color: #172033;
+    /* App background */
+    .stApp,
+    [data-testid="stAppViewContainer"],
+    [data-testid="stMain"] {
+        background-color: #F5F7FB !important;
+        color: #172033 !important;
     }
 
+    /* Header */
     [data-testid="stHeader"] {
-        background-color: #f5f7fb;
-    }
-
-    [data-testid="stToolbar"] {
-        background-color: transparent;
+        background-color: #F5F7FB !important;
     }
 
     /* Main content */
     [data-testid="stMainBlockContainer"] {
         padding-top: 1.5rem;
+        padding-bottom: 2rem;
     }
 
-    /* Headings */
-    h1, h2, h3, h4 {
-        color: #14233b !important;
+    /* Text */
+    h1, h2, h3, h4, p, label {
+        color: #172033 !important;
     }
 
-    /* KPI metric cards */
+    /* KPI cards */
     [data-testid="stMetric"] {
-        background-color: #ffffff;
-        border: 1px solid #e3e9f2;
-        padding: 18px 20px;
-        border-radius: 14px;
-        box-shadow: 0 2px 8px rgba(25, 45, 75, 0.04);
+        background-color: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 14px !important;
+        padding: 18px 20px !important;
+        box-shadow: 0 2px 8px rgba(25, 45, 75, 0.05) !important;
     }
 
     [data-testid="stMetricLabel"] {
-        color: #64748b !important;
+        color: #64748B !important;
     }
 
     [data-testid="stMetricValue"] {
         color: #172033 !important;
     }
 
-    [data-testid="stMetricDelta"] {
-        font-weight: 600;
-    }
-
-    /* Tables */
-    [data-testid="stDataFrame"] {
-        background-color: #ffffff;
-        border: 1px solid #e3e9f2;
-        border-radius: 12px;
-    }
-
-    /* Select boxes */
-    [data-testid="stSelectbox"] {
-        background-color: #ffffff;
-    }
-
-    /* News cards */
+    /* Containers */
     [data-testid="stVerticalBlockBorderWrapper"] {
-        background-color: #ffffff;
-        border-color: #e3e9f2 !important;
-        border-radius: 12px;
+        background-color: #FFFFFF !important;
+        border-color: #E2E8F0 !important;
+        border-radius: 12px !important;
+    }
+
+    /* Dataframes */
+    [data-testid="stDataFrame"] {
+        background-color: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 12px !important;
+    }
+
+    /* Selectbox */
+    [data-baseweb="select"] > div {
+        background-color: #FFFFFF !important;
+        color: #172033 !important;
+        border-color: #D9E2EF !important;
+    }
+
+    /* Inputs */
+    input, textarea {
+        background-color: #FFFFFF !important;
+        color: #172033 !important;
     }
 
     /* Buttons */
     .stButton > button {
-        border-radius: 9px;
-        border: 1px solid #d9e2ef;
-        background-color: #ffffff;
-        color: #1d3557;
-        font-weight: 600;
+        background-color: #FFFFFF !important;
+        color: #172033 !important;
+        border: 1px solid #D9E2EF !important;
+        border-radius: 9px !important;
+        font-weight: 600 !important;
     }
 
     .stButton > button:hover {
-        border-color: #3b82f6;
-        color: #2563eb;
-    }
-
-    /* Dividers */
-    hr {
-        border-color: #e3e9f2 !important;
+        border-color: #2563EB !important;
+        color: #2563EB !important;
     }
 
     /* Captions */
     [data-testid="stCaptionContainer"] {
-        color: #64748b;
+        color: #64748B !important;
+    }
+
+    /* Dividers */
+    hr {
+        border-color: #E2E8F0 !important;
     }
 
     /* Alerts */
     [data-testid="stAlert"] {
-        border-radius: 10px;
+        border-radius: 10px !important;
     }
 
+    /* Links */
+    a {
+        color: #2563EB !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -140,7 +145,7 @@ st.markdown(
 # ============================================================
 
 def get_connection():
-    """Create a PostgreSQL connection."""
+    """Create PostgreSQL connection."""
 
     if not DB_CONFIG["database"]:
         raise ValueError("PG_DATABASE is missing from your .env file.")
@@ -152,7 +157,7 @@ def get_connection():
 
 
 def fetch_data(query, params=None):
-    """Execute SQL query and return the result as a DataFrame."""
+    """Execute SQL and return DataFrame."""
 
     conn = get_connection()
 
@@ -260,7 +265,7 @@ def format_timestamp(value):
 
 
 def latest_per_symbol(df):
-    """Return latest window for each symbol."""
+    """Get latest window for each stock."""
 
     if df.empty:
         return df
@@ -292,11 +297,11 @@ except Exception as e:
     st.error("Unable to connect to PostgreSQL or load Gold data.")
 
     st.warning(
-        "Please check your PostgreSQL service, .env credentials, "
+        "Please check PostgreSQL status, .env credentials, "
         "database name, schema, and table names."
     )
 
-    with st.expander("View technical error"):
+    with st.expander("Technical error details"):
         st.code(str(e))
 
     st.stop()
@@ -324,7 +329,7 @@ st.divider()
 
 
 # ============================================================
-# 8. STOCK FILTERS
+# 8. FILTERS
 # ============================================================
 
 all_symbols = sorted(
@@ -334,7 +339,7 @@ all_symbols = sorted(
     | set(alerts_df["symbol"].dropna().tolist())
 )
 
-filter_col1, filter_col2 = st.columns([1, 1])
+filter_col1, filter_col2 = st.columns(2)
 
 with filter_col1:
     selected_symbol = st.selectbox(
@@ -364,17 +369,15 @@ chart_limits = {
 chart_limit = chart_limits[chart_window_option]
 
 
-# Apply symbol filtering
+# Apply stock filter
 
 if selected_symbol == "ALL":
-
     filtered_stock = stock_df.copy()
     filtered_sentiment = sentiment_df.copy()
     filtered_news = news_df.copy()
     filtered_alerts = alerts_df.copy()
 
 else:
-
     filtered_stock = stock_df[
         stock_df["symbol"] == selected_symbol
     ].copy()
@@ -396,14 +399,13 @@ else:
 # 9. KPI CALCULATIONS
 # ============================================================
 
-# Unique news article count from individual Gold news records.
+# Distinct news articles
 total_articles = filtered_news["article_id"].nunique()
 
-# Observed unique symbols from Gold.
-# This is not the configured watchlist count.
+# Symbols observed in Gold tables
 tracked_stocks = len(all_symbols)
 
-# Average latest sentiment per symbol.
+# Latest sentiment window per stock
 latest_sentiment = latest_per_symbol(filtered_sentiment)
 
 if (
@@ -414,10 +416,10 @@ if (
 else:
     avg_market_sentiment = None
 
-# Alert records from Gold alerts table.
+# Gold alert records
 alert_record_count = len(filtered_alerts)
 
-# Last news processing timestamp.
+# Latest news processing timestamp
 if (
     not filtered_news.empty
     and filtered_news["processed_at"].notna().any()
@@ -426,7 +428,7 @@ if (
 else:
     last_news_update = None
 
-# Last stock metric calculation timestamp.
+# Latest market processing timestamp
 if (
     not filtered_stock.empty
     and filtered_stock["computed_at"].notna().any()
@@ -446,20 +448,20 @@ kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 
 with kpi1:
     st.metric(
-        label="📰 News Articles",
-        value=f"{total_articles:,}",
+        "📰 News Articles",
+        f"{total_articles:,}",
     )
 
 with kpi2:
     st.metric(
-        label="📊 Stocks Tracked",
-        value=f"{tracked_stocks:,}",
+        "📊 Stocks Tracked",
+        f"{tracked_stocks:,}",
     )
 
 with kpi3:
     st.metric(
-        label="🧠 Average Sentiment",
-        value=(
+        "🧠 Average Sentiment",
+        (
             format_number(avg_market_sentiment, 3)
             if avg_market_sentiment is not None
             else "—"
@@ -468,12 +470,12 @@ with kpi3:
 
 with kpi4:
     st.metric(
-        label="🚨 Alert Records",
-        value=f"{alert_record_count:,}",
+        "🚨 Alert Records",
+        f"{alert_record_count:,}",
     )
 
 
-# Data freshness
+# Data freshness information
 freshness_col1, freshness_col2 = st.columns(2)
 
 with freshness_col1:
@@ -534,7 +536,7 @@ if not latest_stock.empty:
     )
 
 else:
-    st.info("No stock metrics are available for this selection.")
+    st.info("No stock metrics available for the selected stock.")
 
 
 # ============================================================
@@ -591,14 +593,14 @@ if not latest_sentiment_table.empty:
     )
 
 else:
-    st.info("No sentiment records are available.")
+    st.info("No sentiment data available.")
 
 
 st.divider()
 
 
 # ============================================================
-# 13. SENTIMENT VS PRICE MOVEMENT
+# 13. SENTIMENT VS PRICE MOVEMENT CHART
 # ============================================================
 
 st.subheader("📉 Sentiment vs Price Movement")
@@ -610,16 +612,13 @@ if not filtered_sentiment.empty:
     )
 
     if selected_symbol == "ALL" and chart_symbols:
-
         chart_symbol = st.selectbox(
-            "Select stock for chart",
+            "Select stock for historical analysis",
             chart_symbols,
             key="chart_symbol",
         )
-
     elif chart_symbols:
         chart_symbol = selected_symbol
-
     else:
         chart_symbol = None
 
@@ -642,7 +641,7 @@ if not filtered_sentiment.empty:
 
             fig = go.Figure()
 
-            # Sentiment line
+            # Sentiment
             fig.add_trace(
                 go.Scatter(
                     x=chart_df["window_start"],
@@ -653,13 +652,12 @@ if not filtered_sentiment.empty:
                     yaxis="y",
                     hovertemplate=(
                         "Time: %{x}<br>"
-                        "Sentiment: %{y:.3f}"
-                        "<extra></extra>"
+                        "Sentiment: %{y:.3f}<extra></extra>"
                     ),
                 )
             )
 
-            # Price movement line
+            # Price movement
             fig.add_trace(
                 go.Scatter(
                     x=chart_df["window_start"],
@@ -670,8 +668,7 @@ if not filtered_sentiment.empty:
                     yaxis="y2",
                     hovertemplate=(
                         "Time: %{x}<br>"
-                        "Price Change: %{y:.2f}%"
-                        "<extra></extra>"
+                        "Price Change: %{y:.2f}%<extra></extra>"
                     ),
                 )
             )
@@ -679,31 +676,21 @@ if not filtered_sentiment.empty:
             fig.update_layout(
                 height=420,
                 template="plotly_white",
-                paper_bgcolor="#ffffff",
-                plot_bgcolor="#ffffff",
-                font=dict(
-                    color="#172033",
-                ),
-                margin=dict(
-                    l=15,
-                    r=15,
-                    t=40,
-                    b=15,
-                ),
-                legend=dict(
-                    orientation="h",
-                    y=1.12,
-                ),
+                paper_bgcolor="#FFFFFF",
+                plot_bgcolor="#FFFFFF",
+                font=dict(color="#172033"),
+                margin=dict(l=15, r=15, t=40, b=15),
+                legend=dict(orientation="h", y=1.12),
                 xaxis=dict(
                     title="Window Start",
-                    gridcolor="#e8edf4",
+                    gridcolor="#E8EDF4",
                 ),
                 yaxis=dict(
                     title="Sentiment Score",
                     range=[-1, 1],
-                    gridcolor="#e8edf4",
+                    gridcolor="#E8EDF4",
                     zeroline=True,
-                    zerolinecolor="#cbd5e1",
+                    zerolinecolor="#CBD5E1",
                 ),
                 yaxis2=dict(
                     title="Price Change (%)",
@@ -719,10 +706,10 @@ if not filtered_sentiment.empty:
             )
 
         else:
-            st.info("No historical chart data is available.")
+            st.info("No chart history available.")
 
 else:
-    st.info("No sentiment-price data is available.")
+    st.info("No sentiment-price data available.")
 
 
 st.divider()
@@ -750,7 +737,6 @@ if not filtered_news.empty:
 
     for _, row in latest_news_display.iterrows():
 
-        # Convert null values to readable text.
         headline = safe_value(
             row.get("headline"),
             "No headline available",
@@ -775,10 +761,10 @@ if not filtered_news.empty:
         score_text = format_number(score, 3)
         published = format_timestamp(row.get("published_at"))
 
-        # Native Streamlit rendering: no raw HTML.
+        # Native Streamlit card - no raw HTML rendering
         with st.container(border=True):
 
-            st.text(headline)
+            st.markdown(f"**{headline}**")
 
             st.caption(
                 f"{symbol}  •  {source}  •  {published}"
@@ -789,7 +775,7 @@ if not filtered_news.empty:
             )
 
 else:
-    st.info("No news records are available.")
+    st.info("No news records available.")
 
 
 st.divider()
