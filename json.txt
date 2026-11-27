@@ -40,3 +40,51 @@ Vision agent that estimates queue and crowd density from camera feeds to reroute
 Automated work-order creation with a repair-window estimate
 Suggested Data
 A mock schedule of 50–100 flights/trains with passenger bookings and crew rosters, a public weather API, and a simulated asset-health event stream.
+
+
+AI Cashless Claims, Discharge & Claim-Status Copilot
+Problem Statement
+Cashless hospitalization often stalls on paperwork. Pre-authorization requests bounce back for missing or inconsistent documents, patients wait hours or days for discharge approval, and insurance reviewers are overloaded with claims that are either clearly incomplete or clearly valid. At the same time, fraud, inflated billing, and medically unnecessary stays must still be controlled.
+
+Patients and hospitals also lack visibility into claim progress: no one can easily see which stakeholder holds the claim, what action is pending, or why it is delayed. This leads to repeated follow-ups and delayed settlements.
+
+Challenge
+Build an AI-powered claims copilot that ingests structured and unstructured documents (prescriptions, reports, bills, policy documents), validates coverage, assesses medical necessity, flags anomalies, and communicates status to patients and hospitals. The system should explain every decision, cite policy clauses and clinical guidelines, show confidence scores, and route ambiguous cases to a human reviewer before final submission.
+
+Expected Capabilities
+•
+Document extraction and structuring from messy, multi-format inputs
+•
+Policy coverage checks (waiting periods, exclusions, sub-limits, network status)
+•
+Medical-necessity and length-of-stay validation against clinical guidelines
+•
+Billing audit (inflated charges, duplicate claims, document mismatches)
+•
+Faster pre-authorization and settlement through automatic completeness checks
+•
+Explanations with citations to policy clauses and guidelines
+•
+Claim journey tracker showing the current owner, pending action, and reason for delay
+•
+Plain-language patient updates on what is missing, covered, and owed
+•
+Claims reviewer-in-the-loop workflow with a full audit trail
+Minimum Scope -must work in the demo
+1.
+Extract key fields from a claim packet (bills, discharge summary, policy)
+2.
+Check coverage against policy rules, citing the exact clause
+3.
+Flag missing documents and billing anomalies
+4.
+Claim status view (owner, pending action, delay reason) and a reviewer screen to approve, query, or reject
+Bonus- optional
+•
+Length-of-stay validation against a guideline table
+•
+Vision agent for handwritten prescriptions and scanned bills
+•
+Multilingual voice agent for claim-status queries
+Suggested Data
+A public sample health-insurance policy wording (PDF), 10–20 synthetic claim packets, and a short guideline table for common procedures.
